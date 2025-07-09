@@ -9,7 +9,8 @@ load_dotenv()
 
 API_KEY = os.getenv("RECALL_API_KEY")
 
-RECALL_MAIN_API_BASE = "https://api.recall.network"
+# RECALL_MAIN_API_BASE = "https://api.recall.network"RECALL_SANDBOX_API_BASE = "https://api.sandbox.competitions.recall.network"
+
 RECALL_SANDBOX_API_BASE = "https://api.sandbox.competitions.recall.network"
 
 TRADE_ENDPOINT = f"{RECALL_SANDBOX_API_BASE}/trade/execute"
@@ -165,10 +166,22 @@ def main():
     print(f"   {to_token}: {to_address}")
 
     # Get prices
+       # Get prices
     print(f"⏳ Getting prices for {from_token} and {to_token}...")
     from_price = get_token_price(from_address)
     to_price = get_token_price(to_address)
 
+    # Check wallet balance BEFORE executing the trade
+    balance = get_balance(from_token)
+    if balance is None:
+        print(f"❌ No balance found for {from_token}.")
+        print("💡 Run: python initialise.py to set up your wallet.")
+        return
+    if balance < token_amount:
+        print(f"❌ Insufficient balance: You have {balance} {from_token}, need {token_amount:.6f}")
+        return
+
+    # Now proceed with price logic and trade execution
     if from_price is None or to_price is None:
         print("❌ Could not fetch prices. Trying swap quote...")
         trade_response = trade_exec(from_address, to_address, token_amount)
@@ -186,11 +199,12 @@ def main():
         print(f"💰 Estimated Output:")
         print(f"   {token_amount} {from_token} ≈ {expected_output:.6f} {to_token}")
 
-        # Also try to execute actual trade
+        # Now it's safe to execute the actual trade
         trade_response = trade_exec(from_address, to_address, token_amount)
         if not trade_response:
             print("❌ Trade failed during execution.")
             return
+
 
     # Check wallet balance
     balance = get_balance(from_token)

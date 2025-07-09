@@ -29,18 +29,18 @@ def init_db(db_file='trading_simulator.db'):
     # Insert initial wallet balances with mock tokens for both networks
     initial_balances = [
         # Ethereum Mock Tokens
-        ('USDC', 10000.0),    # Starting with 10,000 USDC
-        ('WETH', 5.0),        # Starting with 5 WETH
-        ('WBTC', 0.5),        # Starting with 0.5 WBTC
-        ('DAI', 2000.0),      # Starting with 2,000 DAI
-        ('USDT', 3000.0),     # Starting with 3,000 USDT
+        ('USDC', 1000.0),    # Starting with 10,000 USDC
+        ('WETH', 1.0),        # Starting with 5 WETH
+        ('WBTC', 0.0),        # Starting with 0.5 WBTC
+        ('DAI', 0.0),      # Starting with 2,000 DAI
+        ('USDT', 0.0),     # Starting with 3,000 USDT
         
         # Solana Mock Tokens
-        ('SOL', 100.0),       # Starting with 100 SOL
-        ('USDC-SOL', 5000.0), # Starting with 5,000 USDC on Solana
-        ('WSOL', 50.0),       # Starting with 50 Wrapped SOL
-        ('RAY', 1000.0),      # Starting with 1,000 RAY
-        ('SRM', 500.0),       # Starting with 500 SRM
+        ('SOL', 0.0),       # Starting with 100 SOL
+        ('USDC-SOL', 0.0), # Starting with 5,000 USDC on Solana
+        ('WSOL', 0.0),       # Starting with 50 Wrapped SOL
+        ('RAY', 0.0),      # Starting with 1,000 RAY
+        ('SRM', 0.0),       # Starting with 500 SRM
     ]
 
     for asset, balance in initial_balances:
