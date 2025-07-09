@@ -10,7 +10,7 @@ API_KEY = os.getenv("RECALL_API_KEY")
 
 def get_portfolio():
     """Get portfolio information from Recall API"""
-    url = f"{RECALL_SANDBOX_API_BASE}/api/agent/portfolio"
+    url = f"{RECALL_SANDBOX_API_BASE}/api/agent/balances"
     
     headers = {
         "Content-Type": "application/json",
