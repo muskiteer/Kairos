@@ -1,5 +1,6 @@
 import os
 import requests
+import json
 from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables from .env file
@@ -16,26 +17,23 @@ def get_portfolio():
         "Content-Type": "application/json",
         "Authorization": f"Bearer {API_KEY}"
     }
-    
-    print(f"🔍 Portfolio API Request:")
-    print(f"   URL: {url}")
-    print(f"   Headers: {headers}")
-    
+
     try:
         resp = requests.get(url, headers=headers, timeout=30)
-        print(f"🔍 Response Status: {resp.status_code}")
-        
         if resp.ok:
-            portfolio_data = resp.json()
-            print(f"🔍 Portfolio Response: {portfolio_data}")
-            return portfolio_data
+            return resp.json()
         else:
-            print(f"❌ Failed to get portfolio: {resp.status_code} {resp.text}")
-            return None
+            return {
+                "error": "Failed to get portfolio",
+                "status": resp.status_code,
+                "details": resp.text
+            }
     except Exception as e:
-        print(f"❌ Error fetching portfolio: {e}")
-        return None
+        return {
+            "error": "Exception occurred while fetching portfolio",
+            "details": str(e)
+        }
 
-# 👇 Run when the script is executed directly
 if __name__ == "__main__":
-    get_portfolio()
+    portfolio = get_portfolio()
+    print(json.dumps(portfolio))  # ✅ Valid JSON output
