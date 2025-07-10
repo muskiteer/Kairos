@@ -18,6 +18,7 @@ from token_balance import get_token_balance
 from token_price import get_token_price_json
 from trades_history import get_portfolio as get_trades_history
 from execute import trade_exec, token_addresses
+from coinpanic_api import coinpanic_api, get_crypto_news, get_trending_news, get_currency_news, get_bullish_news, get_bearish_news
 
 # Initialize colorama for colored output
 colorama.init()
@@ -69,6 +70,22 @@ class PowerfulGeminiTradingAgent:
             return get_trades_history()
         except Exception as e:
             return {"error": f"Failed to get trades history: {str(e)}"}
+    
+    def get_crypto_news_data(self, currencies=None, limit=5, news_type="trending"):
+        """Get cryptocurrency news (optimized for speed)"""
+        try:
+            if news_type == "trending":
+                return get_trending_news(limit=limit)
+            elif news_type == "bullish":
+                return get_bullish_news(limit=limit)
+            elif news_type == "bearish":
+                return get_bearish_news(limit=limit)
+            elif news_type == "currency" and currencies:
+                return get_currency_news(currencies[0], limit=limit)
+            else:
+                return get_crypto_news(currencies=currencies, limit=limit)
+        except Exception as e:
+            return {"error": f"Failed to get crypto news: {str(e)}"}
     
     def execute_trade_now(self, from_token, to_token, amount):
         """Execute a trade immediately - REAL TRADING"""
@@ -161,8 +178,24 @@ class PowerfulGeminiTradingAgent:
         if action == 'trade':
             return 'execute_trade', {'from_token': from_token, 'to_token': to_token, 'amount': amount}
         
+        # News requests
+        if any(word in message_lower for word in ['news', 'latest', 'updates', 'trending', 'bullish', 'bearish']):
+            # Check for specific sentiment
+            if 'bullish' in message_lower or 'bull' in message_lower or 'positive' in message_lower:
+                return 'news', {'type': 'bullish', 'limit': 5}
+            elif 'bearish' in message_lower or 'bear' in message_lower or 'negative' in message_lower:
+                return 'news', {'type': 'bearish', 'limit': 5}
+            elif 'trending' in message_lower or 'hot' in message_lower:
+                return 'news', {'type': 'trending', 'limit': 3}
+            else:
+                # Check for specific currency news
+                for token in token_addresses.keys():
+                    if token.lower() in message_lower:
+                        return 'news', {'type': 'currency', 'currencies': [token], 'limit': 5}
+                return 'news', {'type': 'trending', 'limit': 3}
+        
         # Portfolio requests
-        if any(word in message_lower for word in ['portfolio', 'holdings', 'balance', 'wallet']):
+        elif any(word in message_lower for word in ['portfolio', 'holdings', 'balance', 'wallet']):
             # Check for specific token
             for token in token_addresses.keys():
                 if token.lower() in message_lower:
@@ -303,6 +336,17 @@ class PowerfulGeminiTradingAgent:
                 context_data = f"\n📜 Trading History:\n{json.dumps(history_data, indent=2)}"
                 print(context_data)
             
+            elif intent == 'news':
+                news_type = params.get('type', 'trending')
+                currencies = params.get('currencies', None)
+                limit = params.get('limit', 10)
+                
+                print(f"{Fore.YELLOW}🔍 Getting {news_type} crypto news...{Style.RESET_ALL}")
+                news_data = self.get_crypto_news_data(currencies=currencies, limit=limit, news_type=news_type)
+                function_result = news_data
+                context_data = self.format_news_display(news_data)
+                print(context_data)
+            
             elif intent == 'help':
                 context_data = f"""
 🎯 I can help you with:
@@ -310,21 +354,24 @@ class PowerfulGeminiTradingAgent:
 • Token balances: "How much USDC do I have?"
 • Price checking: "What's the price of WETH?"
 • Trading history: "Show my trades"
+• Crypto news: "Show me trending news", "Get bullish news", "Show ETH news"
 • REAL TRADING: "Buy 500 USDC worth of WETH" or "Trade 100 USDC to WETH"
 
 💰 Supported tokens: {', '.join(token_addresses.keys())}
+📰 News types: trending, bullish, bearish, currency-specific
 🔥 REAL TRADING ENABLED - I can execute actual trades via Recall API!
 """
                 print(context_data)
             
             # Generate AI response with full context
             ai_prompt = f"""
-You are a POWERFUL cryptocurrency trading assistant with FULL ACCESS to the Recall API. You can:
+You are a POWERFUL cryptocurrency trading assistant with FULL ACCESS to the Recall API and CoinPanic News API. You can:
 
 1. View portfolios and balances
 2. Get real-time prices  
 3. View trading history
-4. EXECUTE REAL TRADES via Recall API
+4. Get cryptocurrency news (trending, bullish, bearish, currency-specific)
+5. EXECUTE REAL TRADES via Recall API
 
 User message: {message}
 
@@ -334,14 +381,16 @@ Function execution result: {json.dumps(function_result, indent=2) if function_re
 
 Guidelines:
 - You have FULL POWER to execute trades via Recall API
+- You can provide latest cryptocurrency news and market sentiment
 - Be confident and professional
 - Explain what you did and the results
-- Provide market insights and trading advice
+- Provide market insights and trading advice based on news
 - If a trade was executed, confirm the details
+- If news was fetched, analyze the sentiment and provide insights
 - Be encouraging but mention risks appropriately
-- You are a REAL trading assistant, not just an advisor
+- You are a REAL trading assistant with access to live market data and news
 
-Respond as a powerful crypto trading expert who just executed actions via the Recall API.
+Respond as a powerful crypto trading expert who just executed actions via APIs.
 """
             
             response = self.model.generate_content(ai_prompt)
@@ -366,10 +415,15 @@ Respond as a powerful crypto trading expert who just executed actions via the Re
         print(f"{Fore.WHITE}  • Real-time portfolio and balance checking{Style.RESET_ALL}")
         print(f"{Fore.WHITE}  • Live cryptocurrency price feeds{Style.RESET_ALL}")
         print(f"{Fore.WHITE}  • Complete trading history access{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • Cryptocurrency news and market sentiment{Style.RESET_ALL}")
         print(f"{Fore.RED}  • REAL TRADE EXECUTION via Recall API{Style.RESET_ALL}")
         print(f"{Fore.WHITE}  • Advanced market analysis and insights{Style.RESET_ALL}")
         print()
         print(f"{Fore.YELLOW}💰 Supported tokens: {', '.join(token_addresses.keys())}{Style.RESET_ALL}")
+        print(f"{Fore.BLUE}📰 NEWS EXAMPLES:{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • \"Show me trending crypto news\"{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • \"Get bullish news\"{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}  • \"Show me Bitcoin news\"{Style.RESET_ALL}")
         print(f"{Fore.RED}🔥 REAL TRADING EXAMPLES:{Style.RESET_ALL}")
         print(f"{Fore.WHITE}  • \"Buy 500 USDC worth of WETH\"{Style.RESET_ALL}")
         print(f"{Fore.WHITE}  • \"Trade 100 USDC to WETH\"{Style.RESET_ALL}")
