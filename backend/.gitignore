@@ -1,2 +1,3 @@
 .env
 trading_simulator.db
+__pycache__
