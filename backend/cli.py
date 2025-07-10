@@ -1,9 +1,9 @@
 import json
-from token_price import get_token_price_json
-from token_balance import get_token_balance
-from trades_history import get_portfolio as get_trades_history
-from execute import trade_exec, token_addresses
-from portfolio import get_portfolio
+from api.token_price import get_token_price_json
+from api.token_balance import get_token_balance
+from api.trades_history import get_portfolio as get_trades_history
+from api.execute import trade_exec, token_addresses
+from api.portfolio import get_portfolio
 
 def print_menu():
     """Display the main menu options"""

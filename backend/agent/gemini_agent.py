@@ -13,12 +13,12 @@ import colorama
 from colorama import Fore, Style
 
 # Import your existing API functions
-from portfolio import get_portfolio
-from token_balance import get_token_balance
-from token_price import get_token_price_json
-from trades_history import get_portfolio as get_trades_history
-from execute import trade_exec, token_addresses
-from coinpanic_api import coinpanic_api, get_crypto_news, get_trending_news, get_currency_news, get_bullish_news, get_bearish_news
+from api.portfolio import get_portfolio
+from api.token_balance import get_token_balance
+from api.token_price import get_token_price_json
+from api.trades_history import get_portfolio as get_trades_history
+from api.execute import trade_exec, token_addresses
+from agent.coinpanic_api import coinpanic_api, get_crypto_news, get_trending_news, get_currency_news, get_bullish_news, get_bearish_news
 
 # Initialize colorama for colored output
 colorama.init()

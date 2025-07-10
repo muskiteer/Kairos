@@ -3,7 +3,7 @@
 Main entry point for Gemini Trading Agent
 """
 
-from gemini_agent import GeminiTradingAgent
+from agent.gemini_agent import GeminiTradingAgent
 
 def main():
     """Start the Gemini Trading Agent"""
@@ -18,3 +18,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    

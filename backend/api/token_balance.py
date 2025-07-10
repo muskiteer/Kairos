@@ -1,6 +1,6 @@
 import argparse
 import json
-from portfolio import get_portfolio
+from api.portfolio import get_portfolio
 
 def get_token_balance(token):
     """Return {'symbol': token, 'amount': ...} for the given token symbol."""

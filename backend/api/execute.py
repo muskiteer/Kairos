@@ -1,8 +1,8 @@
 import argparse
 import json
 
-from token_balance import get_token_balance
-from token_price import get_token_price_json as get_token_price
+from api.token_balance import get_token_balance
+from api.token_price import get_token_price_json as get_token_price
 import requests
 import os
 from dotenv import load_dotenv
