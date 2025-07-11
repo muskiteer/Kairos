@@ -1,4 +1,4 @@
-# 🚀 Strait AI - Powerful Cryptocurrency Trading Assistant
+# 🚀 Kairos - Powerful Cryptocurrency Trading Assistant
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
@@ -64,8 +64,8 @@
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/Strait-AI.git
-cd Strait-AI
+git clone https://github.com/yourusername/Kairos.git
+cd Kairos
 ```
 
 ### 2. Backend Setup
@@ -292,16 +292,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Documentation**: [Wiki](https://github.com/yourusername/Strait-AI/wiki)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/Strait-AI/issues)
-- **Discord**: [Community Server](https://discord.gg/strait-ai)
+- **Documentation**: [Wiki](https://github.com/yourusername/Kairos/wiki)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/Kairos/issues)
+- **Discord**: [Community Server](https://discord.gg/Kairos)
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by the Strait AI Team**
+**Made with ❤️ by the Kairos Team**
 
-[Website](https://strait-ai.com) • [Documentation](https://docs.strait-ai.com) • [Discord](https://discord.gg/strait-ai)
+[Website](https://Kairos.com) • [Documentation](https://docs.Kairos.com) • [Discord](https://discord.gg/Kairos)
 
 </div>
