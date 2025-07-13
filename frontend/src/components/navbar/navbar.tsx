@@ -16,9 +16,9 @@ const Navbar = () => {
         <div className="flex items-center gap-3">
           <ThemeToggle />
           <Button variant="outline" className="hidden sm:inline-flex">
-            Sign In
+            Login
           </Button>
-          <Button className="hidden xs:inline-flex">Get Started</Button>
+          <Button className="hidden xs:inline-flex">Start Trading</Button>
 
           {/* Mobile Menu */}
           <div className="md:hidden">

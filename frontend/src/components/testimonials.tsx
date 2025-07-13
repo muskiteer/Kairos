@@ -1,62 +1,60 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Marquee from "@/components/ui/marquee";
-import Link from "next/link";
-import React, { ComponentProps } from "react";
+import React from "react";
 
 const testimonials = [
   {
     id: 1,
-    name: "John Doe",
-    designation: "Software Engineer",
-    company: "TechCorp",
+    name: "Marcus Chen",
+    designation: "Crypto Trader",
+    company: "BlockTrade Capital",
     testimonial:
-      "This product has completely transformed the way we work. The efficiency and ease of use are unmatched!",
+      "Kairos AI has completely transformed my trading strategy. The autonomous agent makes profitable trades while I sleep, and the Vincent policy engine gives me perfect risk control.",
     avatar: "https://randomuser.me/api/portraits/men/1.jpg",
   },
   {
     id: 2,
-    name: "Sophia Lee",
-    designation: "Data Analyst",
-    company: "InsightTech",
+    name: "Sarah Williams",
+    designation: "Portfolio Manager",
+    company: "Digital Assets Inc",
     testimonial:
-      "This tool has saved me hours of work! The analytics and reporting features are incredibly powerful.",
+      "The hybrid architecture with vector memory is genius. Kairos learns from every trade and applies past experiences to new opportunities. My returns have increased by 40%.",
     avatar: "https://randomuser.me/api/portraits/women/6.jpg",
   },
   {
     id: 3,
-    name: "Michael Johnson",
-    designation: "UX Designer",
-    company: "DesignPro",
+    name: "Alex Rodriguez",
+    designation: "DeFi Investor",
+    company: "CryptoVentures",
     testimonial:
-      "An amazing tool that simplifies complex tasks. Highly recommended for professionals in the industry.",
+      "I love how Kairos operates in different modes. Normal mode keeps me in control, while Aggressive mode unleashes full AI autonomy. The Lit Protocol integration is seamless.",
     avatar: "https://randomuser.me/api/portraits/men/3.jpg",
   },
   {
     id: 4,
-    name: "Emily Davis",
-    designation: "Marketing Specialist",
-    company: "BrandBoost",
+    name: "Emma Thompson",
+    designation: "Algorithmic Trader",
+    company: "QuantCrypto Labs",
     testimonial:
-      "I've seen a significant improvement in our team's productivity since we started using this service.",
+      "The real-time market analysis using CoinGecko and TAAPI data is incredibly accurate. Kairos consistently identifies profitable opportunities before the market moves.",
     avatar: "https://randomuser.me/api/portraits/women/4.jpg",
   },
   {
     id: 5,
-    name: "Daniel Martinez",
-    designation: "Full-Stack Developer",
-    company: "CodeCrafters",
+    name: "David Kim",
+    designation: "Crypto Fund Manager",
+    company: "Blockchain Capital",
     testimonial:
-      "The best investment we've made! The support team is also super responsive and helpful.",
+      "The strategy builder is intuitive and powerful. I can create custom rules that the AI follows perfectly. The dashboard shows exactly why each trade was made.",
     avatar: "https://randomuser.me/api/portraits/men/5.jpg",
   },
   {
     id: 6,
-    name: "Jane Smith",
-    designation: "Product Manager",
-    company: "InnovateX",
+    name: "Luna Nakamura",
+    designation: "DeFi Strategist",
+    company: "Web3 Innovations",
     testimonial:
-      "The user experience is top-notch! The interface is clean, intuitive, and easy to navigate.",
+      "Kairos' ability to recall similar market situations and learn from past trades is revolutionary. It's like having a crypto trading mentor that never forgets.",
     avatar: "https://randomuser.me/api/portraits/women/2.jpg",
   },
 ];
@@ -65,63 +63,56 @@ const Testimonials = () => (
   <div id="testimonials" className="flex justify-center items-center py-20">
     <div className="h-full w-full">
       <h2 className="mb-12 text-4xl md:text-5xl font-bold text-center tracking-tight px-6">
-        Testimonials
+        What Traders Say About Kairos
       </h2>
       <div className="relative">
-        <div className="z-10 absolute left-0 inset-y-0 w-[15%] bg-gradient-to-r from-background to-transparent" />
-        <div className="z-10 absolute right-0 inset-y-0 w-[15%] bg-gradient-to-l from-background to-transparent" />
-        <Marquee pauseOnHover className="[--duration:20s]">
-          <TestimonialList />
+        <div className="z-10 absolute left-0 inset-y-0 w-[15%] bg-gradient-to-r from-background to-transparent pointer-events-none" />
+        <div className="z-10 absolute right-0 inset-y-0 w-[15%] bg-gradient-to-l from-background to-transparent pointer-events-none" />
+        
+        <Marquee pauseOnHover className="[--duration:40s]" repeat={2}>
+          {testimonials.map((testimonial) => (
+            <TestimonialCard key={testimonial.id} testimonial={testimonial} />
+          ))}
         </Marquee>
-        <Marquee pauseOnHover reverse className="mt-0 [--duration:20s]">
-          <TestimonialList />
+        
+        <Marquee pauseOnHover reverse className="mt-4 [--duration:40s]" repeat={2}>
+          {testimonials.map((testimonial) => (
+            <TestimonialCard key={`reverse-${testimonial.id}`} testimonial={testimonial} />
+          ))}
         </Marquee>
       </div>
     </div>
   </div>
 );
 
-const TestimonialList = () =>
-  testimonials.map((testimonial) => (
-    <div
-      key={testimonial.id}
-      className="min-w-96 max-w-sm bg-accent rounded-xl p-6"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Avatar>
-            <AvatarFallback className="text-xl font-medium bg-primary text-primary-foreground">
-              {testimonial.name.charAt(0)}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="text-lg font-semibold">{testimonial.name}</p>
-            <p className="text-sm text-gray-500">{testimonial.designation}</p>
-          </div>
+const TestimonialCard = ({ testimonial }: { testimonial: typeof testimonials[0] }) => (
+  <div className="min-w-96 max-w-sm bg-accent rounded-xl p-6 mx-4 border shadow-sm">
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-4">
+        <Avatar className="w-12 h-12">
+          <AvatarImage src={testimonial.avatar} alt={testimonial.name} />
+          <AvatarFallback className="text-lg font-medium bg-primary text-primary-foreground">
+            {testimonial.name.charAt(0)}
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <p className="text-lg font-semibold">{testimonial.name}</p>
+          <p className="text-sm text-muted-foreground">{testimonial.designation}</p>
+          <p className="text-xs text-muted-foreground font-medium">{testimonial.company}</p>
         </div>
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="#" target="_blank">
-            <TwitterLogo className="w-4 h-4" />
-          </Link>
-        </Button>
       </div>
-      <p className="mt-5 text-[17px]">{testimonial.testimonial}</p>
+      <div className="flex gap-1">
+        {[...Array(5)].map((_, i) => (
+          <svg key={i} className="w-4 h-4 fill-yellow-400" viewBox="0 0 20 20">
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+          </svg>
+        ))}
+      </div>
     </div>
-  ));
-
-const TwitterLogo = (props: ComponentProps<"svg">) => (
-  <svg
-    role="img"
-    viewBox="0 0 24 24"
-    xmlns="http://www.w3.org/2000/svg"
-    {...props}
-  >
-    <title>X</title>
-    <path
-      fill="currentColor"
-      d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"
-    />
-  </svg>
+    <blockquote className="text-[15px] leading-relaxed text-foreground">
+      "{testimonial.testimonial}"
+    </blockquote>
+  </div>
 );
 
 export default Testimonials;

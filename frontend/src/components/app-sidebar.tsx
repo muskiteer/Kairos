@@ -2,13 +2,8 @@
 
 import * as React from "react"
 import {
-  AudioWaveform,
   Book,
-  BookOpen,
   Bot,
-  Command,
-  Frame,
-  GalleryVerticalEnd,
   History,
   LogOut,
   Map,
@@ -18,7 +13,6 @@ import {
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -65,7 +59,7 @@ const data = {
     },
     {
       title: "Logout",
-      url: "/logout",
+      url: "/",
       icon: LogOut,
     },
   ],
@@ -115,7 +109,7 @@ export function AppSidebar({
       },
       {
         title: "Logout",
-        url: "/logout",
+        url: "/",
         icon: LogOut,
         isActive: activePage === "logout",
       },
