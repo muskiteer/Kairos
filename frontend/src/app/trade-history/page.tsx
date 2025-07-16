@@ -87,7 +87,7 @@ export default function TradeHistoryPage() {
   const [cachedData, setCachedData] = useState<{trades: Trade[], stats: TradeStats, timestamp: number} | null>(null)
   const CACHE_DURATION = 30000 // 30 seconds
 
-  // Fetch trade history from API - OPTIMIZED
+  // Fetch trade history from API - OPTIMIZED WITH SINGLE CALL
   const fetchTradeHistory = async (useCache = true) => {
     // Check cache first
     if (useCache && cachedData && (Date.now() - cachedData.timestamp) < CACHE_DURATION) {
@@ -103,30 +103,31 @@ export default function TradeHistoryPage() {
     
     try {
       const startTime = Date.now()
-      console.log("🚀 Fetching fresh trade history...")
+      console.log("🚀 Fetching trade history with single API call...")
       
       // Use a timeout to prevent hanging
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
       
-      setLoadingMessage("Fetching manual trades...")
+      setLoadingMessage("Fetching all trades...")
       
-      // Fetch both manual trades and AI agent trades in parallel
-      const [manualResponse, aiResponse] = await Promise.allSettled([
-        fetch('http://localhost:8000/api/trades/history', {
-          signal: controller.signal,
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }
-        }),
-        fetch('http://localhost:8000/api/ai-agent/trades', {
-          signal: controller.signal,
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }
-        })
-      ])
+      // Single API call to get all trades (both manual and AI agent)
+      const response = await fetch('http://localhost:8000/api/trades/history', {
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }
+      })
       
       clearTimeout(timeoutId)
       
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      
+      // Extract trades and stats from the response
       let allTrades: Trade[] = []
-      let combinedStats = {
+      let receivedStats = {
         totalTrades: 0,
         totalVolume: 0,
         successRate: 0,
@@ -135,83 +136,75 @@ export default function TradeHistoryPage() {
         mostTradedToken: ""
       }
       
-      // Process manual trades
-      if (manualResponse.status === 'fulfilled' && manualResponse.value.ok) {
-        const manualData = await manualResponse.value.json()
-        if (manualData.trades && Array.isArray(manualData.trades)) {
-          const manualTrades = manualData.trades.map((trade: any, index: number) => ({
-            ...trade,
-            id: trade.id || `manual_${index}`,
-            source: 'manual' as const
-          }))
-          allTrades.push(...manualTrades)
-          console.log(`📊 Loaded ${manualTrades.length} manual trades`)
-        }
+      // Process the response data
+      if (data.trades && Array.isArray(data.trades)) {
+        allTrades = data.trades.map((trade: any, index: number) => ({
+          ...trade,
+          id: trade.id || `trade_${index}`,
+          source: trade.source || 'manual' as const
+        }))
+        console.log(`📊 Loaded ${allTrades.length} trades`)
       }
       
-      setLoadingMessage("Fetching AI agent trades...")
-      
-      // Process AI agent trades
-      if (aiResponse.status === 'fulfilled' && aiResponse.value.ok) {
-        const aiData = await aiResponse.value.json()
-        if (aiData.trades && Array.isArray(aiData.trades)) {
-          const aiTrades = aiData.trades.map((trade: any, index: number) => ({
-            ...trade,
-            id: trade.id || `ai_${index}`,
-            source: 'ai_agent' as const
-          }))
-          allTrades.push(...aiTrades)
-          console.log(`🤖 Loaded ${aiTrades.length} AI agent trades`)
+      // Use stats from API response if available, otherwise calculate locally
+      if (data.stats && typeof data.stats === 'object') {
+        receivedStats = {
+          totalTrades: data.stats.totalTrades || 0,
+          totalVolume: data.stats.totalVolume || 0,
+          successRate: data.stats.successRate || 0,
+          totalFees: data.stats.totalFees || 0,
+          avgTradeSize: data.stats.avgTradeSize || 0,
+          mostTradedToken: data.stats.mostTradedToken || "N/A"
         }
-      }
-      
-      // Sort all trades by timestamp (newest first)
-      allTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      
-      // Calculate combined statistics
-      const totalTrades = allTrades.length
-      const successfulTrades = allTrades.filter(t => t.status === 'success').length
-      const totalVolume = allTrades.reduce((sum, t) => sum + (t.totalValue || 0), 0)
-      const totalFees = allTrades.reduce((sum, t) => sum + (t.gasFee || 0), 0)
-      
-      // Calculate REAL most traded token from actual trades
-      const tokenFrequency: Record<string, number> = {}
-      allTrades.forEach(trade => {
-        [trade.fromToken, trade.toToken].forEach(token => {
-          if (token && token !== "UNKNOWN") {
-            tokenFrequency[token] = (tokenFrequency[token] || 0) + 1
-          }
+      } else {
+        // Calculate stats locally if not provided by API
+        const totalTrades = allTrades.length
+        const successfulTrades = allTrades.filter(t => t.status === 'success').length
+        const totalVolume = allTrades.reduce((sum, t) => sum + (t.totalValue || 0), 0)
+        const totalFees = allTrades.reduce((sum, t) => sum + (t.gasFee || 0), 0)
+        
+        // Calculate most traded token from actual trades
+        const tokenFrequency: Record<string, number> = {}
+        allTrades.forEach(trade => {
+          [trade.fromToken, trade.toToken].forEach(token => {
+            if (token && token !== "UNKNOWN") {
+              tokenFrequency[token] = (tokenFrequency[token] || 0) + 1
+            }
+          })
         })
-      })
-      
-      const mostTradedToken = Object.keys(tokenFrequency).length > 0 
-        ? Object.entries(tokenFrequency).reduce((a, b) => a[1] > b[1] ? a : b)[0]
-        : "N/A"
-      
-      combinedStats = {
-        totalTrades,
-        totalVolume,
-        successRate: totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0,
-        totalFees,
-        avgTradeSize: totalTrades > 0 ? totalVolume / totalTrades : 0,
-        mostTradedToken // REAL most traded token from actual data
+        
+        const mostTradedToken = Object.keys(tokenFrequency).length > 0 
+          ? Object.entries(tokenFrequency).reduce((a, b) => a[1] > b[1] ? a : b)[0]
+          : "N/A"
+        
+        receivedStats = {
+          totalTrades,
+          totalVolume,
+          successRate: totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0,
+          totalFees,
+          avgTradeSize: totalTrades > 0 ? totalVolume / totalTrades : 0,
+          mostTradedToken
+        }
       }
+      
+      // Sort trades by timestamp (newest first)
+      allTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       
       const loadTime = Date.now() - startTime
       
       // Update state and cache
       setTrades(allTrades)
-      setTradeStats(combinedStats)
+      setTradeStats(receivedStats)
       
       // Cache the data
       setCachedData({
         trades: allTrades,
-        stats: combinedStats,
+        stats: receivedStats,
         timestamp: Date.now()
       })
       
-      setLoadingMessage(`Loaded ${totalTrades} trades (${successfulTrades} successful) in ${loadTime}ms`)
-      console.log(`📊 Total trades loaded: ${totalTrades} in ${loadTime}ms`)
+      setLoadingMessage(`Loaded ${receivedStats.totalTrades} trades in ${loadTime}ms`)
+      console.log(`📊 Total trades loaded: ${receivedStats.totalTrades} in ${loadTime}ms`)
       
     } catch (error: any) {
       console.error('❌ Trade history fetch error:', error)
@@ -219,7 +212,7 @@ export default function TradeHistoryPage() {
       if (error.name === 'AbortError') {
         setLoadingMessage("Request timed out - please try again")
       } else {
-        setLoadingMessage("Network error occurred")
+        setLoadingMessage(`Network error: ${error.message}`)
       }
       
       setTrades([])
