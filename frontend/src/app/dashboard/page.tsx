@@ -176,39 +176,43 @@ export default function DashboardPage() {
 
   // Fetch latest crypto news
   const loadLatestNews = async () => {
-    setIsLoadingNews(true)
-    try {
-      const response = await fetch('http://localhost:8000/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: "show me trending crypto news",
-          timestamp: new Date().toISOString(),
-        }),
-      })
+  setIsLoadingNews(true)
+  try {
+    const response = await fetch('http://localhost:8000/api/news?limit=6&news_type=trending', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
 
-      if (response.ok) {
-        const data = await response.json()
-        // Parse the news from the AI response
-        const newsMatches = data.response.match(/📍 \d+\. (.+?)\n/g) || []
-        const parsedNews = newsMatches.slice(0, 6).map((match: string, index: number) => {
-          const title = match.replace(/📍 \d+\. /, '').replace('\n', '')
-          return {
-            title,
-            source: "CoinPanic",
-            date: new Date().toLocaleDateString(),
-            sentiment: index % 3 === 0 ? 'bullish' : index % 3 === 1 ? 'bearish' : 'neutral'
-          }
-        })
+    if (response.ok) {
+      const data = await response.json()
+      console.log('News data received:', data) // Debug log
+      
+      // Use the direct news data from our API
+      if (data.news && Array.isArray(data.news)) {
+        const parsedNews = data.news.map((item: any, index: number) => ({
+          title: item.title || 'No title',
+          source: item.source || 'CoinPanic',
+          date: new Date(item.published_at || Date.now()).toLocaleDateString(),
+          sentiment: item.votes?.positive > item.votes?.negative ? 'bullish' : 
+                    item.votes?.negative > item.votes?.positive ? 'bearish' : 'neutral',
+          url: item.url || '#'
+        }))
         setNewsItems(parsedNews)
+      } else {
+        console.warn('No news items found in response')
+        setNewsItems([])
       }
-    } catch (error) {
-      console.error('Failed to fetch news:', error)
+    } else {
+      console.error('News API response not ok:', response.status)
     }
-    setIsLoadingNews(false)
+  } catch (error) {
+    console.error('Failed to fetch news:', error)
+    setNewsItems([])
   }
+  setIsLoadingNews(false)
+}
 
   // Auto-refresh data
   useEffect(() => {

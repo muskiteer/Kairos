@@ -250,163 +250,107 @@ async def generate_session_report(session_id: str):
 
 @app.get("/api/trades/history")
 async def get_trades_history():
-    """Get trade history and statistics from Recall API - OPTIMIZED VERSION"""
+    """Get trade history from Recall API - SIMPLIFIED VERSION"""
     try:
-        # Token address to symbol mapping - optimized lookup
-        token_mapping = {
-            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "USDC",
-            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "WETH", 
-            "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "WBTC",
-            "0xdAC17F958D2ee523a2206206994597C13D831ec7": "USDT",
-            "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984": "UNI",
-            "0x0000000000000000000000000000000000000000": "ETH"
-        }
-        
-        def get_token_symbol(address: str) -> str:
-            """Convert token address to symbol - fast lookup"""
-            return token_mapping.get(address, address[:6] + "...")
-        
-        def get_real_price(symbol: str) -> float:
-            """Get REAL price from API - NO MOCK DATA EVER"""
-            try:
-                print(f"🔍 Getting REAL price for {symbol} from API...")
-                price_data = get_token_price_json(symbol)
-                if isinstance(price_data, dict) and "price" in price_data:
-                    real_price = float(price_data["price"])
-                    print(f"💰 REAL {symbol} price from API: ${real_price:,.2f}")
-                    return real_price
-                elif symbol in ["USDC", "USDT"]:
-                    # Only stablecoins can be $1
-                    print(f"💰 {symbol} stablecoin: $1.00")
-                    return 1.0
-                else:
-                    print(f"⚠️ API returned invalid data for {symbol}: {price_data}")
-                    return 0.0
-            except Exception as e:
-                print(f"❌ Error getting REAL {symbol} price from API: {e}")
-                return 0.0
-        
-        print("📊 Fetching trade history...")
+        print("📊 Fetching trade history from Recall API...")
         start_time = datetime.now()
         
-        # Get portfolio/trades data from Recall API
-        portfolio_data = get_portfolio()
+        # Get trades data directly from the trades_history module
+        from api.trades_history import get_portfolio
+        recall_data = get_portfolio()
         
-        if isinstance(portfolio_data, dict) and "error" in portfolio_data:
-            print(f"⚠️ API Error: {portfolio_data.get('error')}")
+        if not recall_data or isinstance(recall_data, dict) and "error" in recall_data:
+            print(f"⚠️ API Error: {recall_data.get('error') if recall_data else 'No data returned'}")
             return {
                 "trades": [],
                 "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""}
             }
         
-        # Process trades with minimal processing for speed
-        trades = []
-        total_volume = 0
-        successful_trades = 0
-        token_frequency = {}
+        # Extract trades from the recall API response
+        trades_list = []
+        if isinstance(recall_data, dict) and "trades" in recall_data:
+            raw_trades = recall_data["trades"]
+        else:
+            raw_trades = recall_data if isinstance(recall_data, list) else []
         
-        # Extract and limit trades for performance (only latest 50)
-        trade_data = portfolio_data if isinstance(portfolio_data, list) else []
-        if isinstance(portfolio_data, dict):
-            trade_data = portfolio_data.get("trades", portfolio_data.get("history", []))
+        print(f"🔍 Processing {len(raw_trades)} trades from Recall API...")
         
-        # Limit to recent trades for speed
-        trade_data = trade_data[:50] if len(trade_data) > 50 else trade_data
-        
-        for i, trade_item in enumerate(trade_data):
-            if not isinstance(trade_item, dict):
-                continue
-                
+        # Process each trade from the actual API structure
+        for i, trade_item in enumerate(raw_trades):
             try:
-                # Fast processing - no expensive API calls
-                from_token_address = trade_item.get("from_token", "UNKNOWN")
-                to_token_address = trade_item.get("to_token", "UNKNOWN")
-                
-                from_token = get_token_symbol(from_token_address)
-                to_token = get_token_symbol(to_token_address)
-                
-                amount = float(trade_item.get("amount", 0))
-                to_amount = float(trade_item.get("to_amount", amount))
-                
-                # REAL price lookup - NO MOCK DATA
-                from_price = get_real_price(from_token)
-                to_price = get_real_price(to_token)
-                
-                # Quick value calculation
-                total_value = amount * from_price if from_price > 0 else to_amount * to_price
-                
-                # Determine trade type quickly
-                trade_type = "buy" if from_token in ["USDC", "USDT"] else "sell" if to_token in ["USDC", "USDT"] else "swap"
-                
-                # Create trade object with minimal processing
+                # Map the real Recall API fields to our frontend format
                 trade = {
                     "id": trade_item.get("id", f"trade_{i}"),
                     "timestamp": trade_item.get("timestamp", datetime.now().isoformat()),
-                    "fromToken": from_token,
-                    "toToken": to_token,
-                    "fromAmount": amount,
-                    "toAmount": to_amount,
-                    "fromPrice": from_price,
-                    "toPrice": to_price,
-                    "totalValue": total_value,
-                    "chain": trade_item.get("chain", "Ethereum"),
-                    "txHash": trade_item.get("txHash", f"0x{i:064x}"),
-                    "status": trade_item.get("status", "success"),  # Use REAL status from API
-                    "gasUsed": int(trade_item.get("gasUsed", 21000)),
-                    "gasFee": float(trade_item.get("gasFee", 0.001)),
-                    "slippage": float(trade_item.get("slippage", 0.1)),
-                    "type": trade_type
+                    "fromToken": trade_item.get("fromTokenSymbol", "UNKNOWN"),
+                    "toToken": trade_item.get("toTokenSymbol", "UNKNOWN"),
+                    "fromAmount": float(trade_item.get("fromAmount", 0)),
+                    "toAmount": float(trade_item.get("toAmount", 0)),
+                    "fromPrice": float(trade_item.get("price", 0)),  # This is the exchange rate
+                    "toPrice": 1.0,  # Calculate inverse if needed
+                    "totalValue": float(trade_item.get("tradeAmountUsd", 0)),
+                    "chain": trade_item.get("fromSpecificChain", "eth").title(),
+                    "txHash": trade_item.get("id", f"0x{i:064x}"),  # Use trade ID as txHash for now
+                    "status": "success" if trade_item.get("success", False) else "failed",
+                    "gasUsed": 21000,  # Default gas used
+                    "gasFee": 0.005,   # Estimated gas fee
+                    "slippage": 0.1,   # Default slippage
+                    "type": "swap",    # All trades are swaps from the data
+                    "source": "manual" # Mark as manual trades from Recall API
                 }
                 
-                trades.append(trade)
-                total_volume += total_value
+                # Calculate proper prices if needed
+                if trade["fromAmount"] > 0 and trade["toAmount"] > 0:
+                    trade["fromPrice"] = trade["totalValue"] / trade["fromAmount"]
+                    trade["toPrice"] = trade["totalValue"] / trade["toAmount"]
                 
-                # Count REAL successful trades based on actual status
-                if trade.get("status") == "success":
-                    successful_trades += 1
+                trades_list.append(trade)
                 
-                # Track tokens
-                for token in [from_token, to_token]:
-                    if token != "UNKNOWN":
-                        token_frequency[token] = token_frequency.get(token, 0) + 1
-                        
             except Exception as e:
                 print(f"⚠️ Error processing trade {i}: {e}")
                 continue
         
-        # Calculate REAL stats from actual trade data
-        total_trades = len(trades)
-        success_rate = (successful_trades / max(1, total_trades)) * 100 if total_trades > 0 else 0.0
-        avg_trade_size = total_volume / max(1, total_trades)
+        # Calculate statistics from the processed trades
+        total_trades = len(trades_list)
+        successful_trades = len([t for t in trades_list if t["status"] == "success"])
+        total_volume = sum(trade["totalValue"] for trade in trades_list)
+        total_fees = sum(trade["gasFee"] for trade in trades_list)
         
-        # Calculate REAL total fees from actual trades
-        total_fees = sum(trade.get("gasFee", 0) for trade in trades)
+        # Find most traded token
+        token_frequency = {}
+        for trade in trades_list:
+            for token in [trade["fromToken"], trade["toToken"]]:
+                if token and token != "UNKNOWN":
+                    token_frequency[token] = token_frequency.get(token, 0) + 1
         
-        # Find REAL most traded token
         most_traded_token = max(token_frequency.items(), key=lambda x: x[1])[0] if token_frequency else "N/A"
         
         # Sort by timestamp (newest first)
-        trades.sort(key=lambda x: x["timestamp"], reverse=True)
+        trades_list.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        stats = {
+            "totalTrades": total_trades,
+            "totalVolume": round(total_volume, 2),
+            "successRate": round((successful_trades / max(1, total_trades)) * 100, 1),
+            "totalFees": round(total_fees, 6),
+            "avgTradeSize": round(total_volume / max(1, total_trades), 2),
+            "mostTradedToken": most_traded_token
+        }
         
         end_time = datetime.now()
         processing_time = (end_time - start_time).total_seconds()
-        print(f"✅ Trade history processed in {processing_time:.2f}s - {total_trades} trades")
+        print(f"✅ Processed {total_trades} trades in {processing_time:.2f}s")
         
         return {
-            "trades": trades,
-            "stats": {
-                "totalTrades": total_trades,
-                "totalVolume": round(total_volume, 2),
-                "successRate": round(success_rate, 1),
-                "totalFees": round(total_fees, 6),  # REAL fees from actual trades
-                "avgTradeSize": round(avg_trade_size, 2),
-                "mostTradedToken": most_traded_token  # REAL most traded token
-            },
+            "trades": trades_list,
+            "stats": stats,
             "processingTime": f"{processing_time:.2f}s"
         }
         
     except Exception as e:
         print(f"❌ Error fetching trade history: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "trades": [],
             "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""},
@@ -679,7 +623,245 @@ async def stop_autonomous_session(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error stopping session: {str(e)}")
 
-# Legacy endpoint for backward compatibility
+@app.get("/api/price/{token}")
+async def get_token_price_endpoint(token: str):
+    """Get current price for a specific token"""
+    try:
+        price_data = get_token_price_json(token.upper())
+        
+        if isinstance(price_data, dict) and "error" in price_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch price for {token}: {price_data.get('error')}"
+            )
+        
+        # Return the price data directly (not wrapped)
+        return price_data
+        
+    except Exception as e:
+        print(f"❌ Error fetching price for {token}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch price for {token}: {str(e)}"
+        )
+
+@app.get("/api/balance/{token}")
+async def get_token_balance_endpoint(token: str):
+    """Get current balance for a specific token"""
+    try:
+        from api.token_balance import get_token_balance
+        
+        balance_data = get_token_balance(token.upper())
+        
+        if isinstance(balance_data, dict) and "error" in balance_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch balance for {token}: {balance_data.get('error')}"
+            )
+        
+        # Return the balance data directly (not wrapped)
+        return balance_data
+        
+    except Exception as e:
+        print(f"❌ Error fetching balance for {token}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch balance for {token}: {str(e)}"
+        )
+
+@app.get("/api/news")
+async def get_crypto_news(limit: int = 10, news_type: str = "trending"):
+    """Get cryptocurrency news from CoinPanic API"""
+    try:
+        from agent.coinpanic_api import get_trending_news, get_bullish_news, get_bearish_news, get_crypto_news
+        
+        print(f"📰 Fetching {news_type} crypto news (limit: {limit})...")
+        
+        # Route to appropriate news function based on type
+        if news_type == "trending":
+            news_data = get_trending_news(limit=limit)
+        elif news_type == "bullish":
+            news_data = get_bullish_news(limit=limit)
+        elif news_type == "bearish":
+            news_data = get_bearish_news(limit=limit)
+        else:
+            news_data = get_crypto_news(limit=limit)
+        
+        if isinstance(news_data, dict) and "error" in news_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch news: {news_data.get('error')}"
+            )
+        
+        return {
+            "news": news_data.get("news", []),
+            "count": news_data.get("count", 0),
+            "type": news_type,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching crypto news: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch crypto news: {str(e)}"
+        )
+
+@app.get("/api/news/{currency}")
+async def get_currency_news_endpoint(currency: str, limit: int = 5):
+    """Get news for a specific cryptocurrency"""
+    try:
+        from agent.coinpanic_api import get_currency_news
+        
+        print(f"📰 Fetching news for {currency.upper()} (limit: {limit})...")
+        
+        news_data = get_currency_news(currency.upper(), limit=limit)
+        
+        if isinstance(news_data, dict) and "error" in news_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch news for {currency}: {news_data.get('error')}"
+            )
+        
+        return {
+            "news": news_data.get("news", []),
+            "count": news_data.get("count", 0),
+            "currency": currency.upper(),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching news for {currency}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch news for {currency}: {str(e)}"
+        )
+
+@app.get("/api/market/sentiment")
+async def get_market_sentiment():
+    """Get overall market sentiment from news"""
+    try:
+        from agent.coinpanic_api import get_bullish_news, get_bearish_news
+        
+        print("📊 Analyzing market sentiment...")
+        
+        # Get both bullish and bearish news
+        bullish_data = get_bullish_news(limit=5)
+        bearish_data = get_bearish_news(limit=5)
+        
+        bullish_count = bullish_data.get("count", 0) if "error" not in bullish_data else 0
+        bearish_count = bearish_data.get("count", 0) if "error" not in bearish_data else 0
+        
+        total_sentiment_news = bullish_count + bearish_count
+        
+        if total_sentiment_news > 0:
+            bullish_percentage = (bullish_count / total_sentiment_news) * 100
+            bearish_percentage = (bearish_count / total_sentiment_news) * 100
+            
+            if bullish_percentage > 60:
+                sentiment = "bullish"
+            elif bearish_percentage > 60:
+                sentiment = "bearish"
+            else:
+                sentiment = "neutral"
+        else:
+            sentiment = "neutral"
+            bullish_percentage = 50
+            bearish_percentage = 50
+        
+        return {
+            "sentiment": sentiment,
+            "bullish_percentage": round(bullish_percentage, 1),
+            "bearish_percentage": round(bearish_percentage, 1),
+            "bullish_news_count": bullish_count,
+            "bearish_news_count": bearish_count,
+            "total_news_analyzed": total_sentiment_news,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"❌ Error analyzing market sentiment: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze market sentiment: {str(e)}"
+        )
+
+# Trade execution endpoint
+class TradeRequest(BaseModel):
+    fromToken: str
+    toToken: str
+    amount: float
+    timestamp: Optional[str] = None
+
+@app.post("/api/trade")
+async def execute_trade(request: TradeRequest):
+    """Execute a trade between two tokens"""
+    try:
+        print(f"🔄 Trade request: {request.amount} {request.fromToken} → {request.toToken}")
+        
+        # Import the execute trade functionality
+        from api.execute import trade_exec, token_addresses
+        from api.token_balance import get_token_balance
+        
+        # Validate tokens
+        from_token = request.fromToken.upper()
+        to_token = request.toToken.upper()
+        
+        if from_token not in token_addresses or to_token not in token_addresses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported token(s). Supported: {list(token_addresses.keys())}"
+            )
+        
+        # Check balance
+        balance_info = get_token_balance(from_token)
+        balance = balance_info.get("amount", 0)
+        
+        if balance < request.amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient balance. Available: {balance}, Required: {request.amount}"
+            )
+        
+        # Get token addresses
+        from_address = token_addresses[from_token]
+        to_address = token_addresses[to_token]
+        
+        # Execute the trade
+        trade_result = trade_exec(from_address, to_address, request.amount)
+        
+        if trade_result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Trade execution failed"
+            )
+        
+        return {
+            "success": True,
+            "trade_result": trade_result,
+            "fromToken": request.fromToken,
+            "toToken": request.toToken,
+            "amount": request.amount,
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Successfully traded {request.amount} {request.fromToken} for {request.toToken}"
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        print(f"❌ Trade execution error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute trade: {str(e)}"
+        )
+
+# Additional news endpoints that frontend might be calling
+@app.get("/api/market/news")
+async def get_market_news(limit: int = 10):
+    """Alternative endpoint for market news"""
+    return await get_crypto_news(limit=limit, news_type="trending")
+
 @app.post("/chat", response_model=ChatResponse)
 async def legacy_chat(request: ChatRequest):
     """Legacy chat endpoint - redirects to new API"""
