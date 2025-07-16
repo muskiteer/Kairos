@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import colorama
 from colorama import Fore, Style
 from datetime import datetime
+from typing import Optional
 
 # Import your existing API functions
 from api.portfolio import get_portfolio
@@ -19,7 +20,8 @@ from api.token_balance import get_token_balance
 from api.token_price import get_token_price_json
 from api.trades_history import get_portfolio as get_trades_history
 from api.execute import trade_exec, token_addresses
-from agent.coinpanic_api import coinpanic_api, get_crypto_news, get_trending_news, get_currency_news, get_bullish_news, get_bearish_news
+from agent.coinpanic_api import CoinPanicAPI, get_crypto_news, get_trending_news, get_currency_news, get_bullish_news, get_bearish_news
+from utils.api_manager import api_manager
 
 # Initialize colorama for colored output
 colorama.init()
@@ -27,17 +29,23 @@ colorama.init()
 class PowerfulGeminiTradingAgent:
     """Advanced Gemini AI trading agent with full API access and intelligent analysis"""
     
-    def __init__(self):
+    def __init__(self, user_id: str = "default", gemini_api_key: Optional[str] = None):
         """Initialize the powerful agent with full capabilities"""
         # Load environment variables
         load_dotenv()
         
+        # Store user ID for dynamic API key retrieval
+        self.user_id = user_id
+        
         # Setup Gemini AI with maximum capabilities
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("❌ GEMINI_API_KEY not found in .env file")
         
         genai.configure(api_key=api_key)
+        
+        # Initialize CoinPanic API with dynamic key support
+        self.coinpanic_api = None
         # Use the most powerful model available
         self.model = genai.GenerativeModel(
             'gemini-1.5-pro',  # Using the most powerful model
@@ -60,6 +68,23 @@ class PowerfulGeminiTradingAgent:
         }
         
         print(f"{Fore.GREEN}✅ POWERFUL Gemini AI Trading Agent initialized with FULL CAPABILITIES{Style.RESET_ALL}")
+    
+    async def initialize_dynamic_apis(self):
+        """Initialize APIs with dynamic keys from user profile"""
+        try:
+            api_keys = await api_manager.get_user_api_keys(self.user_id)
+            coinpanic_key = api_keys.get("coinpanic_api_key")
+            
+            if coinpanic_key:
+                self.coinpanic_api = CoinPanicAPI(api_key=coinpanic_key)
+                print(f"{Fore.GREEN}✅ CoinPanic API initialized with user key{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}⚠️ No CoinPanic API key found for user {self.user_id}{Style.RESET_ALL}")
+                self.coinpanic_api = CoinPanicAPI()  # Use fallback
+                
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error initializing dynamic APIs: {e}{Style.RESET_ALL}")
+            self.coinpanic_api = CoinPanicAPI()  # Use fallback
         print(f"{Fore.CYAN}🚀 Complete Recall API & CoinPanic News integration enabled{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}⚡ Ready to analyze, trade, and provide expert insights!{Style.RESET_ALL}")
         print(f"{Fore.MAGENTA}🧠 Using Gemini-1.5-Pro with maximum intelligence settings{Style.RESET_ALL}")
@@ -68,7 +93,7 @@ class PowerfulGeminiTradingAgent:
         """Get comprehensive portfolio information with enhanced error handling"""
         try:
             print(f"{Fore.YELLOW}📊 Fetching portfolio data...{Style.RESET_ALL}")
-            portfolio = get_portfolio()
+            portfolio = get_portfolio(user_id=self.user_id)
             
             if isinstance(portfolio, dict) and 'error' not in portfolio:
                 print(f"{Fore.GREEN}✅ Portfolio data retrieved successfully{Style.RESET_ALL}")
@@ -110,10 +135,10 @@ class PowerfulGeminiTradingAgent:
             return {"error": error_msg}
     
     def get_trades_history_data(self):
-        """Get comprehensive trading history"""
+        """Get comprehensive trading history using user-specific API key"""
         try:
             print(f"{Fore.YELLOW}📜 Fetching trading history...{Style.RESET_ALL}")
-            history = get_trades_history()
+            history = get_trades_history(user_id=self.user_id)
             
             if isinstance(history, dict) and 'error' not in history:
                 print(f"{Fore.GREEN}✅ Trading history retrieved successfully{Style.RESET_ALL}")
@@ -124,21 +149,26 @@ class PowerfulGeminiTradingAgent:
             print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
             return {"error": error_msg}
     
-    def get_crypto_news_data(self, currencies=None, limit=10, news_type="trending"):
-        """Get comprehensive cryptocurrency news with sentiment analysis"""
+    async def get_crypto_news_data(self, currencies=None, limit=10, news_type="trending"):
+        """Get comprehensive cryptocurrency news with sentiment analysis using dynamic API"""
         try:
             print(f"{Fore.YELLOW}📰 Fetching {news_type} crypto news...{Style.RESET_ALL}")
             
+            # Ensure CoinPanic API is initialized
+            if not self.coinpanic_api:
+                await self.initialize_dynamic_apis()
+            
+            # Use the instance method from CoinPanicAPI class
             if news_type == "trending":
-                news_data = get_trending_news(limit=limit)
+                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="hot")
             elif news_type == "bullish":
-                news_data = get_bullish_news(limit=limit)
+                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="bullish")
             elif news_type == "bearish":
-                news_data = get_bearish_news(limit=limit)
+                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="bearish")
             elif news_type == "currency" and currencies:
-                news_data = get_currency_news(currencies[0], limit=limit)
+                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="hot")
             else:
-                news_data = get_crypto_news(currencies=currencies, limit=limit)
+                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="new")
             
             if isinstance(news_data, dict) and 'news' in news_data:
                 print(f"{Fore.GREEN}✅ Retrieved {len(news_data['news'])} news items{Style.RESET_ALL}")
