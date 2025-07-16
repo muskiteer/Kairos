@@ -889,5 +889,5 @@ Start autonomous trading with:
         
         return response_data
 
-# Global instance
+# Global instancez
 kairos_copilot = KairosTradingCopilot()

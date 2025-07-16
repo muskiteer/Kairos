@@ -184,17 +184,15 @@ class KairosAutonomousAgent:
         
         session_id = str(uuid.uuid4())
         
-        # Store session in database
+        # Store session in database - FIXED
         try:
-            await supabase_client.create_trading_session(user_id, session_data={
-                "session_type": "autonomous",
-                "duration_hours": params["duration_hours"],
-                "target_tokens": params["target_tokens"],
-                "risk_level": params["risk_level"],
-                "max_trade_size": params["max_trade_size"]
-            })
+            # Use the correct method signature - only user_id parameter
+            db_session_id = await supabase_client.create_trading_session(user_id)
+            print(f"📊 Database session created: {db_session_id}")
+            
         except Exception as e:
             print(f"⚠️ Could not store session in database: {e}")
+            # Continue without database storage for now
         
         # Get real starting portfolio value
         try:
@@ -228,7 +226,8 @@ class KairosAutonomousAgent:
                 "mean_reversion": {"used": 0, "success": 0},
                 "news_sentiment": {"used": 0, "success": 0},
                 "diversification": {"used": 0, "success": 0}
-            }
+            },
+            "activities": []  # Initialize activities log
         }
         
         # Store session
@@ -1101,6 +1100,27 @@ class KairosAutonomousAgent:
                 "active_sessions": len(active_sessions),
                 "sessions": active_sessions
             }
-
-# Global instance
-autonomous_agent = KairosAutonomousAgent()
+    
+    def _add_activity(self, session_id: str, activity_type: str, reasoning: str, strategy: str = "", result: str = ""):
+        """Add activity with unique ID to prevent React key conflicts"""
+        import time
+        import random
+        
+        if session_id in self.autonomous_sessions:
+            unique_id = f"{int(time.time() * 1000)}-{random.randint(1000, 9999)}"
+            
+            activity = {
+                "id": unique_id,  # Add unique ID
+                "timestamp": datetime.utcnow().isoformat(),
+                "type": activity_type,
+                "reasoning": reasoning,
+                "strategy": strategy,
+                "result": result
+            }
+            
+            self.autonomous_sessions[session_id]["activities"].append(activity)
+            
+            # Keep only last 50 activities to prevent memory issues
+            if len(self.autonomous_sessions[session_id]["activities"]) > 50:
+                self.autonomous_sessions[session_id]["activities"] = \
+                    self.autonomous_sessions[session_id]["activities"][-50:]

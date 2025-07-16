@@ -72,6 +72,15 @@ interface RealtimeUpdate {
   status?: 'success' | 'pending' | 'failed'
 }
 
+interface Activity {
+  id?: string;  // Add optional id field
+  timestamp: string;
+  type: 'decision' | 'trade' | 'analysis' | 'error';
+  reasoning: string;
+  strategy: string;
+  result?: string;
+}
+
 export default function AutonomousAgentPage() {
   const [session, setSession] = useState<AutonomousSession | null>(null)
   const [realtimeUpdates, setRealtimeUpdates] = useState<RealtimeUpdate[]>([])
