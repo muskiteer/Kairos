@@ -48,6 +48,11 @@ const data = {
       icon: Bot,
     },
     {
+      title: "Autonomous Agent",
+      url: "/autonomous-agent",
+      icon: Settings2,
+    },
+    {
       title: "Vincent Police",
       url: "/vincent",
       icon: Book,
@@ -94,6 +99,12 @@ export function AppSidebar({
         url: "/ai-agent",
         icon: Bot,
         isActive: activePage === "ai-agent",
+      },
+      {
+        title: "Autonomous Agent",
+        url: "/autonomous-agent",
+        icon: Settings2,
+        isActive: activePage === "autonomous-agent",
       },
       {
         title: "Vincent Police",

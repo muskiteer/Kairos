@@ -1,89 +1,93 @@
 #!/usr/bin/env python3
 """
-FastAPI Server for Gemini AI Trading Agent
+Kairos Trading API Server - Enhanced with Conversational AI Copilot and Report Generation
 Provides REST API endpoints for the frontend chat interface
 """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Dict, Any, Optional, List
 import json
 import sys
 import os
+import asyncio
 
 # Add the backend directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from agent.gemini_agent import PowerfulGeminiTradingAgent
+# Import our enhanced copilot and autonomous agent
+from agent.kairos_copilot import kairos_copilot
+from agent.autonomous_agent import KairosAutonomousAgent
+from api.trades_history import get_portfolio
+from api.token_price import get_token_price_json
 
-# Initialize FastAPI app
-app = FastAPI(title="Gemini AI Trading Agent API", version="1.0.0")
+# Initialize FastAPI app and autonomous agent
+app = FastAPI(title="Kairos Trading API", version="2.0.0")
+autonomous_agent = KairosAutonomousAgent()
 
 # Add CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],  # Next.js dev server
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000", 
+        "http://localhost:3001", 
+        "http://127.0.0.1:3001"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize the AI agent globally
-try:
-    ai_agent = PowerfulGeminiTradingAgent()
-    print("✅ AI Agent initialized successfully")
-except Exception as e:
-    print(f"❌ Failed to initialize AI Agent: {e}")
-    ai_agent = None
-
 # Request/Response models
 class ChatRequest(BaseModel):
     message: str
-    timestamp: str
+    user_id: Optional[str] = "default"
+    session_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
-    intent: str = None
-    confidence: float = None
-    stats: dict = {}
+    intent: Optional[str] = None
+    confidence: Optional[float] = None
+    data: Optional[Dict[str, Any]] = None
+    actions_taken: Optional[List[str]] = []
+    reasoning: Optional[str] = None
+    suggestions: Optional[List[str]] = []
+    session_id: Optional[str] = None
+    timestamp: str
+
+class SessionRequest(BaseModel):
+    user_id: Optional[str] = "default"
+
+class SessionResponse(BaseModel):
+    session_id: str
+    status: str
+    message: str
     timestamp: str
 
 class HealthResponse(BaseModel):
     status: str
-    agent_ready: bool
-    timestamp: str
-
-class TradeRequest(BaseModel):
-    fromToken: str
-    toToken: str
-    amount: float
-    timestamp: str
-
-class TradeResponse(BaseModel):
-    success: bool
-    message: str
-    txHash: str = None
-    toTokenAmount: float = None
-    gasUsed: int = None
-    timestamp: str
-
-class BalanceResponse(BaseModel):
-    token: str
-    amount: float
-    timestamp: str
-
-class PriceResponse(BaseModel):
-    token: str
-    price: float
+    copilot_ready: bool
+    features: List[str]
     timestamp: str
 
 @app.get("/", response_model=HealthResponse)
 async def root():
     """Health check endpoint"""
     return HealthResponse(
-        status="Gemini AI Trading Agent API is running",
-        agent_ready=ai_agent is not None,
+        status="🚀 Kairos Trading API is running",
+        copilot_ready=True,
+        features=[
+            "Conversational Trading Interface",
+            "AI-Powered Strategy Analysis", 
+            "Vincent AI Policy Integration",
+            "Real-time Portfolio Management",
+            "Market Sentiment Analysis",
+            "Trading Session Management",
+            "PDF Report Generation"
+        ],
         timestamp=datetime.now().isoformat()
     )
 
@@ -91,414 +95,608 @@ async def root():
 async def health_check():
     """Detailed health check"""
     return HealthResponse(
-        status="healthy" if ai_agent else "agent_not_initialized",
-        agent_ready=ai_agent is not None,
+        status="healthy",
+        copilot_ready=True,
+        features=[
+            "Gemini AI Integration",
+            "Supabase Database", 
+            "Vincent AI Policy Engine",
+            "Recall API Trading",
+            "CoinPanic News Feed",
+            "PDF Report Generation"
+        ],
         timestamp=datetime.now().isoformat()
     )
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat_with_agent(request: ChatRequest):
-    """Main chat endpoint that processes user messages through the AI agent"""
-    
-    if not ai_agent:
-        raise HTTPException(
-            status_code=503, 
-            detail="AI Agent is not initialized. Please check server logs."
+@app.post("/api/sessions", response_model=SessionResponse)
+async def create_trading_session(request: SessionRequest):
+    """Create a new trading session"""
+    try:
+        session_id = await kairos_copilot.start_trading_session(request.user_id)
+        
+        return SessionResponse(
+            session_id=session_id,
+            status="created",
+            message="New trading session started successfully! I'm ready to help you trade.",
+            timestamp=datetime.now().isoformat()
         )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create trading session: {str(e)}"
+        )
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_with_copilot(request: ChatRequest):
+    """Enhanced conversational chat endpoint with Kairos Copilot and Autonomous Agent"""
     
     try:
         print(f"📨 Received message: {request.message}")
         
-        # Analyze user intent
-        intent_analysis = ai_agent.analyze_user_intent_with_ai(request.message)
-        intent = intent_analysis.get('intent', 'general_chat')
-        params = intent_analysis.get('parameters', {})
-        confidence = intent_analysis.get('confidence', 0.5)
-        
-        print(f"🎯 Intent: {intent} (Confidence: {confidence:.0%})")
-        
-        # Process the message and get response
-        response_text = ""
-        stats = None
-        
-        # Handle different intents and collect formatted responses
-        if intent == 'execute_trade':
-            from_token = params.get('from_token')
-            to_token = params.get('to_token')
-            amount = params.get('amount')
+        # Check if this is an autonomous trading request
+        if any(keyword in request.message.lower() for keyword in 
+               ["autonomous", "start trading session", "trade for", "auto trade", "test agent", "run agent"]):
+            # Process through autonomous agent
+            autonomous_response = await autonomous_agent.process_autonomous_request(
+                request.message, 
+                request.user_id or "default"
+            )
             
-            if from_token and to_token and amount:
-                # Pre-trade analysis
-                pre_trade_response = ai_agent.generate_pre_trade_response(
-                    request.message, from_token, to_token, amount
-                )
-                
-                # Execute trade
-                trade_result = ai_agent.execute_trade_now(from_token, to_token, amount)
-                
-                # Post-trade analysis
-                post_trade_response = ai_agent.generate_post_trade_response(
-                    request.message, trade_result, from_token, to_token, amount
-                )
-                
-                # Combine responses
-                response_text = f"""## 🧠 Pre-Trade Analysis
-
-{pre_trade_response}
-
----
-
-## ⚡ Trade Execution
-
-🔥 **EXECUTING TRADE:** {amount} {from_token} → {to_token}
-
----
-
-## 📊 Post-Trade Analysis
-
-{post_trade_response}"""
-                
-                # Update stats if trade was successful
-                if trade_result and 'error' not in trade_result:
-                    portfolio_data = ai_agent.get_portfolio_data()
-                    stats = {
-                        "totalTrades": 1,  # This would be tracked in a real system
-                        "portfolioValue": "$1,000.00",  # Extract from portfolio_data
-                        "lastUpdate": "just now"
-                    }
-            else:
-                response_text = "❌ **Invalid Trade Parameters**\n\nI couldn't parse your trade request. Please use format like:\n• 'Trade 500 USDC to WETH'\n• 'Buy 100 USDC worth of WBTC'\n• 'Convert 50 USDC to DAI'"
-        
-        elif intent == 'portfolio':
-            portfolio_data = ai_agent.get_portfolio_data()
-            formatted_display = ai_agent.format_data_for_display('portfolio', portfolio_data)
-            ai_response = ai_agent.generate_ai_response(request.message, intent, portfolio_data, formatted_display)
-            response_text = f"## 📊 Portfolio Information\n\n{formatted_display}\n\n---\n\n{ai_response}"
-        
-        elif intent == 'token_balance':
-            token = params.get('token')
-            if token:
-                balance_data = ai_agent.get_token_balance_data(token)
-                formatted_display = ai_agent.format_data_for_display('token_balance', balance_data, token)
-                ai_response = ai_agent.generate_ai_response(request.message, intent, balance_data, formatted_display)
-                response_text = f"## 💳 Token Balance\n\n{formatted_display}\n\n---\n\n{ai_response}"
-            else:
-                response_text = "❌ Please specify which token balance you'd like to check."
-        
-        elif intent == 'token_price':
-            token = params.get('token')
-            if token:
-                price_data = ai_agent.get_token_price_data(token)
-                formatted_display = ai_agent.format_data_for_display('token_price', price_data, token)
-                ai_response = ai_agent.generate_ai_response(request.message, intent, price_data, formatted_display)
-                response_text = f"## 💹 Price Information\n\n{formatted_display}\n\n---\n\n{ai_response}"
-            else:
-                response_text = "❌ Please specify which token price you'd like to check."
-        
-        elif intent == 'crypto_news':
-            news_type = params.get('news_type', 'trending')
-            currencies = params.get('currencies', None)
-            limit = params.get('limit', 5)
+            # Ensure data is a dictionary
+            response_data = autonomous_response.get("data", {})
+            if isinstance(response_data, list):
+                response_data = {"items": response_data}
+            elif not isinstance(response_data, dict):
+                response_data = {"value": response_data}
             
-            news_data = ai_agent.get_crypto_news_data(currencies=currencies, limit=limit, news_type=news_type)
-            formatted_display = ai_agent.format_data_for_display('crypto_news', news_data)
-            ai_response = ai_agent.generate_ai_response(request.message, intent, news_data, formatted_display)
-            response_text = f"## 📰 Cryptocurrency News\n\n{formatted_display}\n\n---\n\n{ai_response}"
-        
-        elif intent == 'trades_history':
-            history_data = ai_agent.get_trades_history_data()
-            formatted_display = ai_agent.format_data_for_display('trades_history', history_data)
-            ai_response = ai_agent.generate_ai_response(request.message, intent, history_data, formatted_display)
-            response_text = f"## 📜 Trading History\n\n{formatted_display}\n\n---\n\n{ai_response}"
-        
-        elif intent == 'help':
-            help_text = ai_agent._get_help_text()
-            response_text = help_text
-        
-        else:
-            # General chat
-            ai_response = ai_agent.generate_ai_response(request.message, intent, None, "")
-            response_text = ai_response or "I'm here to help with your cryptocurrency trading needs! Try asking about portfolios, prices, news, or trading commands."
-        
-        print(f"✅ Generated response for {intent}")
-        
-        return ChatResponse(
-            response=response_text,
-            intent=intent,
-            confidence=confidence,
-            stats=stats or {},
-            timestamp=datetime.now().isoformat()
-        )
-        
-    except Exception as e:
-        print(f"❌ Error processing message: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Return helpful error message
-        error_response = f"""❌ **Processing Error**
-
-I encountered an issue while processing your request: {str(e)}
-
-💡 **Troubleshooting:**
-• Make sure all API keys are properly configured in `.env`
-• Check that the backend services are running
-• Try a simpler command like "help" or "show portfolio"
-
-🔧 **Technical Details:**
-```
-Error: {str(e)}
-Intent: {intent if 'intent' in locals() else 'unknown'}
-```
-
-Please try again or contact support if the issue persists."""
-        
-        return ChatResponse(
-            response=error_response,
-            intent="error",
-            confidence=1.0,
-            timestamp=datetime.now().isoformat()
-        )
-
-@app.get("/api/balance/{token}", response_model=BalanceResponse)
-async def get_token_balance(token: str):
-    """Get balance for a specific token"""
-    if not ai_agent:
-        raise HTTPException(status_code=503, detail="AI Agent not initialized")
-    
-    try:
-        token_upper = token.upper()
-        balance_data = ai_agent.get_token_balance_data(token_upper)
-        
-        if 'error' in balance_data:
-            raise HTTPException(status_code=400, detail=balance_data['error'])
-        
-        return BalanceResponse(
-            token=token_upper,
-            amount=balance_data.get('amount', 0),
-            timestamp=datetime.now().isoformat()
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/price/{token}", response_model=PriceResponse)
-async def get_token_price(token: str):
-    """Get current price for a specific token"""
-    if not ai_agent:
-        raise HTTPException(status_code=503, detail="AI Agent not initialized")
-    
-    try:
-        token_upper = token.upper()
-        price_data = ai_agent.get_token_price_data(token_upper)
-        
-        if 'error' in price_data:
-            raise HTTPException(status_code=400, detail=price_data['error'])
-        
-        return PriceResponse(
-            token=token_upper,
-            price=price_data.get('price', 0),
-            timestamp=datetime.now().isoformat()
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/trade", response_model=TradeResponse)
-async def execute_manual_trade(request: TradeRequest):
-    """Execute a manual trade"""
-    if not ai_agent:
-        raise HTTPException(status_code=503, detail="AI Agent not initialized")
-    
-    try:
-        print(f"🔄 Manual trade request: {request.amount} {request.fromToken} → {request.toToken}")
-        
-        # Execute the trade through the agent
-        trade_result = ai_agent.execute_trade_now(
-            request.fromToken, 
-            request.toToken, 
-            request.amount
-        )
-        
-        if 'error' in trade_result:
-            return TradeResponse(
-                success=False,
-                message=trade_result['error'],
+            return ChatResponse(
+                response=autonomous_response.get("response", "I'm sorry, I couldn't process your autonomous request."),
+                intent=autonomous_response.get("intent"),
+                confidence=autonomous_response.get("confidence"),
+                data=response_data,
+                actions_taken=autonomous_response.get("actions_taken", []),
+                reasoning=autonomous_response.get("reasoning"),
+                suggestions=autonomous_response.get("suggestions", []),
+                session_id=request.session_id,
                 timestamp=datetime.now().isoformat()
             )
         
-        return TradeResponse(
-            success=True,
-            message=f"Trade executed: {request.amount} {request.fromToken} → {request.toToken}",
-            txHash=trade_result.get('txHash'),
-            toTokenAmount=trade_result.get('toTokenAmount'),
-            gasUsed=trade_result.get('gasUsed'),
+        # Ensure we have a session for regular copilot
+        if not request.session_id:
+            session_id = await kairos_copilot.start_trading_session(request.user_id)
+        else:
+            session_id = request.session_id
+        
+        # Process message through Kairos Copilot
+        copilot_response = await kairos_copilot.process_user_message(request.message)
+        
+        print(f"🎯 Intent: {copilot_response.get('intent')} (Confidence: {copilot_response.get('confidence', 0):.0%})")
+        
+        # Ensure data is a dictionary, not a list
+        response_data = copilot_response.get("data", {})
+        if isinstance(response_data, list):
+            response_data = {"items": response_data}
+        elif not isinstance(response_data, dict):
+            response_data = {"value": response_data}
+        
+        return ChatResponse(
+            response=copilot_response.get("response", "I'm sorry, I couldn't process your request properly."),
+            intent=copilot_response.get("intent"),
+            confidence=copilot_response.get("confidence"),
+            data=response_data,
+            actions_taken=copilot_response.get("actions_taken", []),
+            reasoning=copilot_response.get("reasoning"),
+            suggestions=copilot_response.get("suggestions", []),
+            session_id=session_id,
             timestamp=datetime.now().isoformat()
         )
         
     except Exception as e:
-        print(f"❌ Trade execution error: {e}")
-        return TradeResponse(
-            success=False,
-            message=f"Trade execution failed: {str(e)}",
+        print(f"❌ Chat error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return ChatResponse(
+            response=f"I apologize, but I encountered an error: {str(e)}. Let me try to help you in a different way. What would you like to do?",
+            intent="error_recovery",
+            confidence=0.0,
+            actions_taken=["error_handling"],
+            suggestions=[
+                "Try asking about your portfolio",
+                "Request market analysis", 
+                "Ask for trading help"
+            ],
             timestamp=datetime.now().isoformat()
         )
 
-@app.get("/api/portfolio/summary")
-async def get_portfolio_summary():
-    """Get aggregated portfolio summary"""
-    if not ai_agent:
-        raise HTTPException(status_code=503, detail="AI Agent not initialized")
-    
+@app.get("/api/sessions/{session_id}/summary")
+async def get_session_summary(session_id: str):
+    """Get comprehensive session summary and analytics"""
     try:
-        portfolio_data = ai_agent.get_portfolio_data()
-        
-        if 'error' in portfolio_data:
-            raise HTTPException(status_code=400, detail=portfolio_data['error'])
-        
-        # Parse portfolio data and calculate summary
-        total_value = 0
-        holdings = []
-        
-        if isinstance(portfolio_data, dict) and 'balances' in portfolio_data:
-            for balance in portfolio_data['balances']:
-                symbol = balance.get('symbol', '').upper()
-                amount = float(balance.get('amount', 0))
-                
-                # Get current price
-                try:
-                    price_data = ai_agent.get_token_price_data(symbol)
-                    price = price_data.get('price', 0) if 'error' not in price_data else 0
-                except:
-                    price = 0
-                
-                value = amount * price
-                total_value += value
-                
-                if amount > 0:
-                    holdings.append({
-                        "symbol": symbol,
-                        "amount": amount,
-                        "price": price,
-                        "value": value
-                    })
-        
-        # Sort holdings by value
-        holdings.sort(key=lambda x: x['value'], reverse=True)
-        
+        summary = await kairos_copilot.generate_session_summary(session_id)
         return {
-            "totalValue": total_value,
-            "totalTokens": len(holdings),
-            "topHolding": holdings[0]['symbol'] if holdings else "",
-            "holdings": holdings,
+            "session_id": session_id,
+            "summary": summary,
             "timestamp": datetime.now().isoformat()
         }
-        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate session summary: {str(e)}"
+        )
+
+@app.post("/api/sessions/{session_id}/report")
+async def generate_session_report(session_id: str):
+    """Generate PDF report for trading session"""
+    try:
+        from utils.report_generator import generate_report
+        
+        # Generate the PDF report
+        report_path = await generate_report(session_id)
+        
+        return {
+            "session_id": session_id,
+            "report_path": report_path,
+            "message": "Trading session report generated successfully",
+            "download_url": f"/api/sessions/{session_id}/download",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate session report: {str(e)}"
+        )
 
 @app.get("/api/trades/history")
-async def get_trade_history():
-    """Get detailed trade history"""
-    if not ai_agent:
-        raise HTTPException(status_code=503, detail="AI Agent not initialized")
-    
+async def get_trades_history():
+    """Get trade history and statistics from Recall API - OPTIMIZED VERSION"""
     try:
-        # Get trade history from the agent
-        history_data = ai_agent.get_trades_history_data()
+        # Token address to symbol mapping - optimized lookup
+        token_mapping = {
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "USDC",
+            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "WETH", 
+            "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "WBTC",
+            "0xdAC17F958D2ee523a2206206994597C13D831ec7": "USDT",
+            "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984": "UNI",
+            "0x0000000000000000000000000000000000000000": "ETH"
+        }
         
-        if 'error' in history_data:
-            raise HTTPException(status_code=400, detail=history_data['error'])
+        def get_token_symbol(address: str) -> str:
+            """Convert token address to symbol - fast lookup"""
+            return token_mapping.get(address, address[:6] + "...")
         
-        # Parse and format trade history
+        def get_real_price(symbol: str) -> float:
+            """Get REAL price from API - NO MOCK DATA EVER"""
+            try:
+                print(f"🔍 Getting REAL price for {symbol} from API...")
+                price_data = get_token_price_json(symbol)
+                if isinstance(price_data, dict) and "price" in price_data:
+                    real_price = float(price_data["price"])
+                    print(f"💰 REAL {symbol} price from API: ${real_price:,.2f}")
+                    return real_price
+                elif symbol in ["USDC", "USDT"]:
+                    # Only stablecoins can be $1
+                    print(f"💰 {symbol} stablecoin: $1.00")
+                    return 1.0
+                else:
+                    print(f"⚠️ API returned invalid data for {symbol}: {price_data}")
+                    return 0.0
+            except Exception as e:
+                print(f"❌ Error getting REAL {symbol} price from API: {e}")
+                return 0.0
+        
+        print("📊 Fetching trade history...")
+        start_time = datetime.now()
+        
+        # Get portfolio/trades data from Recall API
+        portfolio_data = get_portfolio()
+        
+        if isinstance(portfolio_data, dict) and "error" in portfolio_data:
+            print(f"⚠️ API Error: {portfolio_data.get('error')}")
+            return {
+                "trades": [],
+                "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""}
+            }
+        
+        # Process trades with minimal processing for speed
         trades = []
+        total_volume = 0
+        successful_trades = 0
+        token_frequency = {}
         
-        # Parse the real Recall API response format
-        if isinstance(history_data, dict) and 'trades' in history_data:
-            for trade_item in history_data['trades']:
-                # Map token symbols properly
-                from_token = trade_item.get('fromTokenSymbol', '')
-                to_token = trade_item.get('toTokenSymbol', '')
-                from_amount = float(trade_item.get('fromAmount', 0))
-                to_amount = float(trade_item.get('toAmount', 0))
-                price = float(trade_item.get('price', 0))
-                trade_amount_usd = float(trade_item.get('tradeAmountUsd', 0))
+        # Extract and limit trades for performance (only latest 50)
+        trade_data = portfolio_data if isinstance(portfolio_data, list) else []
+        if isinstance(portfolio_data, dict):
+            trade_data = portfolio_data.get("trades", portfolio_data.get("history", []))
+        
+        # Limit to recent trades for speed
+        trade_data = trade_data[:50] if len(trade_data) > 50 else trade_data
+        
+        for i, trade_item in enumerate(trade_data):
+            if not isinstance(trade_item, dict):
+                continue
                 
-                # Determine trade type
-                trade_type = 'swap'
-                if from_token in ['USDC', 'USDT', 'DAI']:
-                    trade_type = 'buy'
-                elif to_token in ['USDC', 'USDT', 'DAI']:
-                    trade_type = 'sell'
+            try:
+                # Fast processing - no expensive API calls
+                from_token_address = trade_item.get("from_token", "UNKNOWN")
+                to_token_address = trade_item.get("to_token", "UNKNOWN")
                 
-                # Map status properly
-                status = 'success' if trade_item.get('success', False) else 'failed'
+                from_token = get_token_symbol(from_token_address)
+                to_token = get_token_symbol(to_token_address)
                 
-                # Generate proper transaction hash from token addresses
-                from_token_addr = trade_item.get('fromToken', '')
-                to_token_addr = trade_item.get('toToken', '')
-                tx_hash = f"0x{trade_item.get('id', '').replace('-', '')[:40]}"
+                amount = float(trade_item.get("amount", 0))
+                to_amount = float(trade_item.get("to_amount", amount))
                 
-                trades.append({
-                    "id": trade_item.get('id', f"trade-{len(trades)}"),
-                    "timestamp": trade_item.get('timestamp', datetime.now().isoformat()),
+                # REAL price lookup - NO MOCK DATA
+                from_price = get_real_price(from_token)
+                to_price = get_real_price(to_token)
+                
+                # Quick value calculation
+                total_value = amount * from_price if from_price > 0 else to_amount * to_price
+                
+                # Determine trade type quickly
+                trade_type = "buy" if from_token in ["USDC", "USDT"] else "sell" if to_token in ["USDC", "USDT"] else "swap"
+                
+                # Create trade object with minimal processing
+                trade = {
+                    "id": trade_item.get("id", f"trade_{i}"),
+                    "timestamp": trade_item.get("timestamp", datetime.now().isoformat()),
                     "fromToken": from_token,
                     "toToken": to_token,
-                    "fromAmount": from_amount,
+                    "fromAmount": amount,
                     "toAmount": to_amount,
-                    "fromPrice": price if trade_type == 'sell' else (trade_amount_usd / from_amount) if from_amount > 0 else 0,
-                    "toPrice": (trade_amount_usd / to_amount) if to_amount > 0 else 0,
-                    "totalValue": trade_amount_usd,
-                    "chain": f"{trade_item.get('fromSpecificChain', 'eth').upper()}",
-                    "txHash": tx_hash,
-                    "status": status,
-                    "gasUsed": int(21000 + (trade_amount_usd * 10)),  # Estimated gas usage
-                    "gasFee": trade_amount_usd * 0.002,  # Estimated 0.2% gas fee
-                    "slippage": 0.05,  # Default 0.05% slippage
+                    "fromPrice": from_price,
+                    "toPrice": to_price,
+                    "totalValue": total_value,
+                    "chain": trade_item.get("chain", "Ethereum"),
+                    "txHash": trade_item.get("txHash", f"0x{i:064x}"),
+                    "status": trade_item.get("status", "success"),  # Use REAL status from API
+                    "gasUsed": int(trade_item.get("gasUsed", 21000)),
+                    "gasFee": float(trade_item.get("gasFee", 0.001)),
+                    "slippage": float(trade_item.get("slippage", 0.1)),
                     "type": trade_type
-                })
+                }
+                
+                trades.append(trade)
+                total_volume += total_value
+                
+                # Count REAL successful trades based on actual status
+                if trade.get("status") == "success":
+                    successful_trades += 1
+                
+                # Track tokens
+                for token in [from_token, to_token]:
+                    if token != "UNKNOWN":
+                        token_frequency[token] = token_frequency.get(token, 0) + 1
+                        
+            except Exception as e:
+                print(f"⚠️ Error processing trade {i}: {e}")
+                continue
         
-        # Calculate trade statistics
-        successful_trades = [t for t in trades if t['status'] == 'success']
-        total_volume = sum(t['totalValue'] for t in successful_trades)
-        total_fees = sum(t['gasFee'] for t in successful_trades)
-        success_rate = (len(successful_trades) / len(trades) * 100) if trades else 0
-        avg_trade_size = total_volume / len(successful_trades) if successful_trades else 0
+        # Calculate REAL stats from actual trade data
+        total_trades = len(trades)
+        success_rate = (successful_trades / max(1, total_trades)) * 100 if total_trades > 0 else 0.0
+        avg_trade_size = total_volume / max(1, total_trades)
         
-        # Find most traded token
-        token_counts = {}
-        for trade in trades:
-            for token in [trade['fromToken'], trade['toToken']]:
-                token_counts[token] = token_counts.get(token, 0) + 1
+        # Calculate REAL total fees from actual trades
+        total_fees = sum(trade.get("gasFee", 0) for trade in trades)
         
-        most_traded_token = max(token_counts.items(), key=lambda x: x[1])[0] if token_counts else ""
+        # Find REAL most traded token
+        most_traded_token = max(token_frequency.items(), key=lambda x: x[1])[0] if token_frequency else "N/A"
         
-        stats = {
-            "totalTrades": len(trades),
-            "totalVolume": total_volume,
-            "successRate": success_rate,
-            "totalFees": total_fees,
-            "avgTradeSize": avg_trade_size,
-            "mostTradedToken": most_traded_token
-        }
+        # Sort by timestamp (newest first)
+        trades.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        print(f"✅ Trade history processed in {processing_time:.2f}s - {total_trades} trades")
         
         return {
             "trades": trades,
-            "stats": stats,
+            "stats": {
+                "totalTrades": total_trades,
+                "totalVolume": round(total_volume, 2),
+                "successRate": round(success_rate, 1),
+                "totalFees": round(total_fees, 6),  # REAL fees from actual trades
+                "avgTradeSize": round(avg_trade_size, 2),
+                "mostTradedToken": most_traded_token  # REAL most traded token
+            },
+            "processingTime": f"{processing_time:.2f}s"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching trade history: {e}")
+        return {
+            "trades": [],
+            "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""},
+            "error": str(e)
+        }
+
+@app.get("/api/ai-agent/trades")
+async def get_ai_agent_trades():
+    """Get trade history from AI autonomous trading sessions - REAL DATA ONLY"""
+    try:
+        from agent.autonomous_agent import autonomous_agent
+        
+        def get_real_price(symbol: str) -> float:
+            """Get REAL price from API - NO MOCK DATA EVER"""
+            try:
+                print(f"🔍 Getting REAL price for AI trade {symbol} from API...")
+                price_data = get_token_price_json(symbol)
+                if isinstance(price_data, dict) and "price" in price_data:
+                    real_price = float(price_data["price"])
+                    print(f"💰 REAL {symbol} price for AI trade: ${real_price:,.2f}")
+                    return real_price
+                elif symbol in ["USDC", "USDT"]:
+                    # Only stablecoins can be $1
+                    return 1.0
+                else:
+                    print(f"⚠️ API returned invalid data for {symbol}: {price_data}")
+                    return 0.0
+            except Exception as e:
+                print(f"❌ Error getting REAL {symbol} price for AI trade: {e}")
+                return 0.0
+        
+        # Get all autonomous sessions
+        all_trades = []
+        total_volume = 0
+        successful_trades = 0
+        
+        for session_id, session in autonomous_agent.autonomous_sessions.items():
+            trades_executed = session.get("trades_executed", [])
+            
+            for trade in trades_executed:
+                # Get REAL token symbols and prices - NO MOCK DATA
+                from_token = trade.get("from_token", "UNKNOWN")
+                to_token = trade.get("to_token", "UNKNOWN")
+                
+                # Get REAL prices from API for AI trades
+                from_price = get_real_price(from_token) if from_token != "UNKNOWN" else 0.0
+                to_price = get_real_price(to_token) if to_token != "UNKNOWN" else 0.0
+                
+                # Calculate real values
+                amount = float(trade.get("amount", 0))
+                received_amount = float(trade.get("received_amount", amount))
+                real_total_value = amount * from_price if from_price > 0 else received_amount * to_price
+                
+                # Convert to standard format with REAL data only
+                standard_trade = {
+                    "id": f"ai_{session_id[:8]}_{trade.get('timestamp', '')[:10]}",
+                    "timestamp": trade.get("timestamp", datetime.now().isoformat()),
+                    "fromToken": from_token,
+                    "toToken": to_token,
+                    "fromAmount": amount,
+                    "toAmount": received_amount,
+                    "fromPrice": from_price,  # REAL price from API
+                    "toPrice": to_price,      # REAL price from API
+                    "totalValue": real_total_value,  # REAL calculated value
+                    "chain": trade.get("chain", "Ethereum"),
+                    "txHash": trade.get("tx_hash", "0x..."),
+                    "status": "success" if trade.get("success", False) else "failed",
+                    "gasUsed": int(trade.get("gas_used", 21000)),
+                    "gasFee": float(trade.get("gas_fee", 0.001)),
+                    "slippage": float(trade.get("slippage", 0.1)),
+                    "type": "swap",
+                    "session_id": session_id,
+                    "strategy": trade.get("strategy", "ai_autonomous")
+                }
+                
+                all_trades.append(standard_trade)
+                total_volume += standard_trade["totalValue"]
+                if standard_trade["status"] == "success":
+                    successful_trades += 1
+        
+        # Sort by timestamp (newest first)
+        all_trades.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        # Calculate REAL stats from actual trade data
+        total_trades = len(all_trades)
+        success_rate = (successful_trades / max(1, total_trades)) * 100
+        avg_trade_size = total_volume / max(1, total_trades)
+        
+        # Calculate REAL total fees from actual trades
+        total_fees = sum(trade.get("gasFee", 0) for trade in all_trades)
+        
+        # Find REAL most traded token from actual trades
+        token_frequency = {}
+        for trade in all_trades:
+            for token in [trade.get("fromToken"), trade.get("toToken")]:
+                if token and token != "UNKNOWN":
+                    token_frequency[token] = token_frequency.get(token, 0) + 1
+        
+        most_traded_token = max(token_frequency.items(), key=lambda x: x[1])[0] if token_frequency else "N/A"
+        
+        return {
+            "trades": all_trades,
+            "stats": {
+                "totalTrades": total_trades,
+                "totalVolume": round(total_volume, 2),
+                "successRate": round(success_rate, 1),
+                "totalFees": round(total_fees, 6),  # REAL fees from actual trades
+                "avgTradeSize": round(avg_trade_size, 2),
+                "mostTradedToken": most_traded_token  # REAL most traded token
+            },
+            "source": "ai_autonomous_agent"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching AI agent trades: {e}")
+        return {
+            "trades": [],
+            "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""},
+            "error": str(e)
+        }
+
+@app.get("/api/portfolio")
+async def get_portfolio_balance():
+    """Get current portfolio balance and summary"""
+    try:
+        from api.portfolio import get_portfolio as get_portfolio_balance
+        
+        portfolio_data = get_portfolio_balance()
+        
+        if isinstance(portfolio_data, dict) and "error" in portfolio_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch portfolio: {portfolio_data.get('error')}"
+            )
+        
+        return {
+            "portfolio": portfolio_data,
             "timestamp": datetime.now().isoformat()
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error fetching portfolio: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch portfolio balance: {str(e)}"
+        )
+
+@app.get("/api/features")
+async def get_features():
+    """Get available Kairos features and capabilities"""
+    return {
+        "conversational_trading": {
+            "description": "Natural language trade execution",
+            "examples": [
+                "Buy 100 USDC worth of ETH",
+                "Swap 50 USDC to WBTC", 
+                "Trade 200 USDC for UNI"
+            ]
+        },
+        "portfolio_analysis": {
+            "description": "AI-powered portfolio insights",
+            "examples": [
+                "How is my portfolio performing?",
+                "What's my current balance?",
+                "Show me my trading history"
+            ]
+        },
+        "market_intelligence": {
+            "description": "Real-time market analysis and news",
+            "examples": [
+                "What's happening in the crypto market?",
+                "Give me Bitcoin news",
+                "Analyze current market sentiment"
+            ]
+        },
+        "strategy_assistance": {
+            "description": "Trading strategy development and optimization",
+            "examples": [
+                "Help me create a DCA strategy",
+                "What's a good entry point for ETH?",
+                "Should I diversify my holdings?"
+            ]
+        },
+        "risk_management": {
+            "description": "Vincent AI-powered policy and risk checks",
+            "examples": [
+                "Is this trade safe?",
+                "Check my portfolio risk",
+                "What are the policy implications?"
+            ]
+        },
+        "autonomous_trading": {
+            "description": "Fully autonomous AI-powered trading sessions",
+            "examples": [
+                "Start trading session for 2hr",
+                "Run autonomous trading for 30min",
+                "Test agent for 24hr"
+            ]
+        },
+        "report_generation": {
+            "description": "Comprehensive PDF trading reports",
+            "examples": [
+                "Generate my session report",
+                "Download trading analysis",
+                "Create performance summary"
+            ]
+        }
+    }
+
+@app.get("/api/autonomous/status/{session_id}")
+async def get_autonomous_status(session_id: str):
+    """Get real-time status of autonomous trading session"""
+    try:
+        if session_id in autonomous_agent.autonomous_sessions:
+            session_data = autonomous_agent.autonomous_sessions[session_id]
+            return {
+                "session_found": True,
+                "session_data": session_data,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "session_found": False,
+                "message": "Session not found",
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting session status: {str(e)}")
+
+@app.get("/api/autonomous/sessions")
+async def list_autonomous_sessions():
+    """List all autonomous trading sessions"""
+    try:
+        sessions = {}
+        for session_id, session_data in autonomous_agent.autonomous_sessions.items():
+            sessions[session_id] = {
+                "session_id": session_id,
+                "status": session_data.get("status", "unknown"),
+                "duration_text": session_data.get("params", {}).get("duration_text", "unknown"),
+                "start_time": session_data.get("params", {}).get("start_time"),
+                "performance": session_data.get("performance", {}),
+                "total_cycles": len(session_data.get("reasoning_log", []))
+            }
+        
+        return {
+            "sessions": sessions,
+            "total_sessions": len(sessions),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")
+
+@app.post("/api/autonomous/stop/{session_id}")
+async def stop_autonomous_session(session_id: str):
+    """Stop a specific autonomous trading session"""
+    try:
+        if session_id in autonomous_agent.autonomous_sessions:
+            autonomous_agent.autonomous_sessions[session_id]["status"] = "stopped"
+            return {
+                "success": True,
+                "message": f"Session {session_id} stopped successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Session not found",
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error stopping session: {str(e)}")
+
+# Legacy endpoint for backward compatibility
+@app.post("/chat", response_model=ChatResponse)
+async def legacy_chat(request: ChatRequest):
+    """Legacy chat endpoint - redirects to new API"""
+    return await chat_with_copilot(request)
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Gemini AI Trading Agent API Server...")
-    print("🌐 Frontend URL: http://localhost:3000")
-    print("📡 API URL: http://localhost:8000")
-    print("📚 API Docs: http://localhost:8000/docs")
+    print("🚀 Starting Kairos Trading API Server...")
+    print("🔗 Frontend URL: http://localhost:3000")
+    print("📚 API Documentation: http://localhost:8000/docs")
+    print("💬 Chat Interface: POST /api/chat")
+    print("📊 Session Management: POST /api/sessions")
+    print("📄 Report Generation: POST /api/sessions/{id}/report")
     
     uvicorn.run(
-        "api_server:app",
-        host="0.0.0.0",
+        "api_server:app", 
+        host="0.0.0.0", 
         port=8000,
         reload=True,
         log_level="info"

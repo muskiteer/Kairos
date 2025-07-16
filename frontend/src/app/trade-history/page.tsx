@@ -53,6 +53,9 @@ interface Trade {
   gasFee?: number
   slippage?: number
   type: 'buy' | 'sell' | 'swap'
+  session_id?: string  // For AI trades
+  strategy?: string    // For AI trades
+  source?: 'manual' | 'ai_agent'  // Trade source
 }
 
 interface TradeStats {
@@ -76,48 +79,149 @@ export default function TradeHistoryPage() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'success' | 'failed' | 'pending'>('all')
+  const [selectedSource, setSelectedSource] = useState<'all' | 'manual' | 'ai_agent'>('all')
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [loadingMessage, setLoadingMessage] = useState("")
 
-  // Fetch trade history from API
-  const fetchTradeHistory = async () => {
+  // Cache system to prevent multiple API calls
+  const [cachedData, setCachedData] = useState<{trades: Trade[], stats: TradeStats, timestamp: number} | null>(null)
+  const CACHE_DURATION = 30000 // 30 seconds
+
+  // Fetch trade history from API - OPTIMIZED
+  const fetchTradeHistory = async (useCache = true) => {
+    // Check cache first
+    if (useCache && cachedData && (Date.now() - cachedData.timestamp) < CACHE_DURATION) {
+      console.log("📦 Using cached trade data")
+      setTrades(cachedData.trades)
+      setTradeStats(cachedData.stats)
+      setLastUpdate(new Date(cachedData.timestamp))
+      return
+    }
+
     setIsLoading(true)
+    setLoadingMessage("Loading trade history...")
+    
     try {
-      // Get real trade history from the API endpoint
-      const response = await fetch('http://localhost:8000/api/trades/history')
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.trades && data.trades.length > 0) {
-          setTrades(data.trades)
-          setTradeStats(data.stats)
-        } else {
-          // No trades available
-          setTrades([])
-          setTradeStats({
-            totalTrades: 0,
-            totalVolume: 0,
-            successRate: 0,
-            totalFees: 0,
-            avgTradeSize: 0,
-            mostTradedToken: ""
-          })
-        }
-      } else {
-        console.error('Failed to fetch trade history:', response.statusText)
-        // Empty state when API fails
-        setTrades([])
-        setTradeStats({
-          totalTrades: 0,
-          totalVolume: 0,
-          successRate: 0,
-          totalFees: 0,
-          avgTradeSize: 0,
-          mostTradedToken: ""
+      const startTime = Date.now()
+      console.log("🚀 Fetching fresh trade history...")
+      
+      // Use a timeout to prevent hanging
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      
+      setLoadingMessage("Fetching manual trades...")
+      
+      // Fetch both manual trades and AI agent trades in parallel
+      const [manualResponse, aiResponse] = await Promise.allSettled([
+        fetch('http://localhost:8000/api/trades/history', {
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }
+        }),
+        fetch('http://localhost:8000/api/ai-agent/trades', {
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }
         })
+      ])
+      
+      clearTimeout(timeoutId)
+      
+      let allTrades: Trade[] = []
+      let combinedStats = {
+        totalTrades: 0,
+        totalVolume: 0,
+        successRate: 0,
+        totalFees: 0,
+        avgTradeSize: 0,
+        mostTradedToken: ""
       }
-    } catch (error) {
-      console.error('Failed to fetch trade history:', error)
-      // Empty state when API fails
+      
+      // Process manual trades
+      if (manualResponse.status === 'fulfilled' && manualResponse.value.ok) {
+        const manualData = await manualResponse.value.json()
+        if (manualData.trades && Array.isArray(manualData.trades)) {
+          const manualTrades = manualData.trades.map((trade: any, index: number) => ({
+            ...trade,
+            id: trade.id || `manual_${index}`,
+            source: 'manual' as const
+          }))
+          allTrades.push(...manualTrades)
+          console.log(`📊 Loaded ${manualTrades.length} manual trades`)
+        }
+      }
+      
+      setLoadingMessage("Fetching AI agent trades...")
+      
+      // Process AI agent trades
+      if (aiResponse.status === 'fulfilled' && aiResponse.value.ok) {
+        const aiData = await aiResponse.value.json()
+        if (aiData.trades && Array.isArray(aiData.trades)) {
+          const aiTrades = aiData.trades.map((trade: any, index: number) => ({
+            ...trade,
+            id: trade.id || `ai_${index}`,
+            source: 'ai_agent' as const
+          }))
+          allTrades.push(...aiTrades)
+          console.log(`🤖 Loaded ${aiTrades.length} AI agent trades`)
+        }
+      }
+      
+      // Sort all trades by timestamp (newest first)
+      allTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      
+      // Calculate combined statistics
+      const totalTrades = allTrades.length
+      const successfulTrades = allTrades.filter(t => t.status === 'success').length
+      const totalVolume = allTrades.reduce((sum, t) => sum + (t.totalValue || 0), 0)
+      const totalFees = allTrades.reduce((sum, t) => sum + (t.gasFee || 0), 0)
+      
+      // Calculate REAL most traded token from actual trades
+      const tokenFrequency: Record<string, number> = {}
+      allTrades.forEach(trade => {
+        [trade.fromToken, trade.toToken].forEach(token => {
+          if (token && token !== "UNKNOWN") {
+            tokenFrequency[token] = (tokenFrequency[token] || 0) + 1
+          }
+        })
+      })
+      
+      const mostTradedToken = Object.keys(tokenFrequency).length > 0 
+        ? Object.entries(tokenFrequency).reduce((a, b) => a[1] > b[1] ? a : b)[0]
+        : "N/A"
+      
+      combinedStats = {
+        totalTrades,
+        totalVolume,
+        successRate: totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0,
+        totalFees,
+        avgTradeSize: totalTrades > 0 ? totalVolume / totalTrades : 0,
+        mostTradedToken // REAL most traded token from actual data
+      }
+      
+      const loadTime = Date.now() - startTime
+      
+      // Update state and cache
+      setTrades(allTrades)
+      setTradeStats(combinedStats)
+      
+      // Cache the data
+      setCachedData({
+        trades: allTrades,
+        stats: combinedStats,
+        timestamp: Date.now()
+      })
+      
+      setLoadingMessage(`Loaded ${totalTrades} trades (${successfulTrades} successful) in ${loadTime}ms`)
+      console.log(`📊 Total trades loaded: ${totalTrades} in ${loadTime}ms`)
+      
+    } catch (error: any) {
+      console.error('❌ Trade history fetch error:', error)
+      
+      if (error.name === 'AbortError') {
+        setLoadingMessage("Request timed out - please try again")
+      } else {
+        setLoadingMessage("Network error occurred")
+      }
+      
       setTrades([])
       setTradeStats({
         totalTrades: 0,
@@ -133,15 +237,65 @@ export default function TradeHistoryPage() {
     setLastUpdate(new Date())
   }
 
+  const exportTradesToCSV = () => {
+    try {
+      // Create CSV headers
+      const headers = [
+        'ID', 'Timestamp', 'Type', 'From Token', 'To Token', 
+        'From Amount', 'To Amount', 'From Price', 'To Price', 
+        'Total Value', 'Chain', 'Gas Fee', 'Status', 'Transaction Hash'
+      ]
+      
+      // Create CSV rows
+      const csvData = [
+        headers.join(','),
+        ...filteredTrades.map(trade => [
+          `"${trade.id}"`,
+          `"${formatDate(trade.timestamp)}"`,
+          `"${trade.type}"`,
+          `"${trade.fromToken}"`,
+          `"${trade.toToken}"`,
+          trade.fromAmount.toString(),
+          trade.toAmount.toString(),
+          trade.fromPrice.toString(),
+          trade.toPrice.toString(),
+          trade.totalValue.toString(),
+          `"${trade.chain}"`,
+          trade.gasFee?.toString() || '0',
+          `"${trade.status}"`,
+          `"${trade.txHash}"`
+        ].join(','))
+      ].join('\n')
+
+      // Create and download file
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob)
+        link.setAttribute('href', url)
+        link.setAttribute('download', `kairos_trade_history_${new Date().toISOString().split('T')[0]}.csv`)
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+    } catch (error) {
+      console.error('❌ Export failed:', error)
+      alert('Failed to export trade history. Please try again.')
+    }
+  }
+
   // Load data on component mount
   useEffect(() => {
     fetchTradeHistory()
   }, [])
 
-  // Filter trades based on status
-  const filteredTrades = trades.filter(trade => 
-    selectedFilter === 'all' || trade.status === selectedFilter
-  )
+  // Filter trades based on status and source
+  const filteredTrades = trades.filter(trade => {
+    const statusMatch = selectedFilter === 'all' || trade.status === selectedFilter
+    const sourceMatch = selectedSource === 'all' || trade.source === selectedSource
+    return statusMatch && sourceMatch
+  })
 
   const formatCurrency = (amount: number) => {
     return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -195,6 +349,22 @@ export default function TradeHistoryPage() {
     }
   }
 
+  const getExplorerUrl = (txHash: string, chain: string) => {
+    const explorers: Record<string, string> = {
+      'ethereum': 'https://etherscan.io/tx/',
+      'polygon': 'https://polygonscan.com/tx/',
+      'bsc': 'https://bscscan.com/tx/',
+      'arbitrum': 'https://arbiscan.io/tx/',
+      'optimism': 'https://optimistic.etherscan.io/tx/',
+      'base': 'https://basescan.org/tx/',
+      'avalanche': 'https://snowtrace.io/tx/'
+    }
+    
+    const normalizedChain = chain.toLowerCase()
+    const baseUrl = explorers[normalizedChain] || explorers['ethereum']
+    return `${baseUrl}${txHash}`
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar activePage="trade-history" />
@@ -219,15 +389,16 @@ export default function TradeHistoryPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {/* Export functionality */}}
+              onClick={exportTradesToCSV}
+              disabled={isLoading || filteredTrades.length === 0}
             >
               <Download className="h-4 w-4 mr-2" />
-              Export
+              Export CSV
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={fetchTradeHistory}
+              onClick={() => fetchTradeHistory(false)} // Force refresh without cache
               disabled={isLoading}
             >
               {isLoading ? (
@@ -235,7 +406,7 @@ export default function TradeHistoryPage() {
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              Refresh
+              {isLoading ? "Loading..." : "Refresh"}
             </Button>
           </div>
         </header>
@@ -318,6 +489,21 @@ export default function TradeHistoryPage() {
                       </Button>
                     ))}
                   </div>
+                  <div className="h-4 w-px bg-border mx-2" />
+                  <div className="flex gap-1">
+                    {(['all', 'manual', 'ai_agent'] as const).map((source) => (
+                      <Button
+                        key={source}
+                        variant={selectedSource === source ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setSelectedSource(source)}
+                      >
+                        {source === 'ai_agent' ? '🤖 AI Agent' : 
+                         source === 'manual' ? '👤 Manual' : 
+                         '📊 All'}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -328,6 +514,7 @@ export default function TradeHistoryPage() {
                     <thead className="border-b bg-muted/50">
                       <tr className="text-left">
                         <th className="p-3 text-sm font-medium">Status</th>
+                        <th className="p-3 text-sm font-medium">Source</th>
                         <th className="p-3 text-sm font-medium">Time</th>
                         <th className="p-3 text-sm font-medium">Type</th>
                         <th className="p-3 text-sm font-medium">From</th>
@@ -347,6 +534,24 @@ export default function TradeHistoryPage() {
                             <div className="flex items-center gap-2">
                               {getStatusIcon(trade.status)}
                               {getStatusBadge(trade.status)}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              {trade.source === 'ai_agent' ? (
+                                <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                                  🤖 AI Agent
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">
+                                  👤 Manual
+                                </Badge>
+                              )}
+                              {trade.strategy && (
+                                <span className="text-xs text-muted-foreground">
+                                  {trade.strategy}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="p-3">
@@ -418,18 +623,26 @@ export default function TradeHistoryPage() {
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0"
-                              onClick={() => window.open(`https://etherscan.io/tx/${trade.txHash}`, '_blank')}
+                              onClick={() => window.open(getExplorerUrl(trade.txHash, trade.chain), '_blank')}
                             >
                               <ExternalLink className="h-3 w-3" />
                             </Button>
                             <div className="text-xs text-muted-foreground font-mono mt-1">
-                              {trade.txHash}
+                              {trade.txHash.slice(0, 10)}...{trade.txHash.slice(-8)}
                             </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  
+                  {isLoading && (
+                    <div className="text-center py-12">
+                      <Loader2 className="h-8 w-8 mx-auto text-muted-foreground mb-4 animate-spin" />
+                      <p className="text-lg font-medium">Loading trade history...</p>
+                      <p className="text-sm text-muted-foreground">{loadingMessage}</p>
+                    </div>
+                  )}
                   
                   {filteredTrades.length === 0 && !isLoading && (
                     <div className="text-center py-12">
@@ -441,13 +654,6 @@ export default function TradeHistoryPage() {
                           : 'Start trading to see your transaction history here'
                         }
                       </p>
-                    </div>
-                  )}
-                  
-                  {isLoading && (
-                    <div className="text-center py-12">
-                      <Loader2 className="h-8 w-8 mx-auto text-muted-foreground mb-4 animate-spin" />
-                      <p className="text-lg font-medium">Loading trade history...</p>
                     </div>
                   )}
                 </div>
