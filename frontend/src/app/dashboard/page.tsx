@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -261,8 +262,12 @@ export default function DashboardPage() {
               className="mr-2 data-[orientation=vertical]:h-4"
             />
             <Breadcrumb>
+
               <BreadcrumbList>
                 <BreadcrumbSeparator className="hidden md:block" />
+                <BreadcrumbItem>
+                  <BreadcrumbLink href="/dashboard">Kairos</BreadcrumbLink>
+                </BreadcrumbItem>
                 <BreadcrumbItem>
                   <BreadcrumbPage>Dashboard</BreadcrumbPage>
                 </BreadcrumbItem>

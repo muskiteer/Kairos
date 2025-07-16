@@ -216,6 +216,9 @@ export default function AIAgentPage() {
             />
             <Breadcrumb>
               <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink href="/dashboard">Kairos</BreadcrumbLink>
+                </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
                   <BreadcrumbPage>AI Agent</BreadcrumbPage>

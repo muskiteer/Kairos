@@ -371,6 +371,9 @@ export default function TradeHistoryPage() {
             />
             <Breadcrumb>
               <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Trade History</BreadcrumbPage>
+                </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
                   <BreadcrumbPage>Trade History</BreadcrumbPage>
