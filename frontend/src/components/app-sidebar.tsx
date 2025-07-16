@@ -10,6 +10,8 @@ import {
   PieChart,
   Settings2,
   SquareTerminal,
+  User
+
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -61,6 +63,11 @@ const data = {
       title: "Trade History",
       url: "/trade-history",
       icon: History,
+    },
+    {
+      title: "Profile",
+      url: "/profile",
+      icon: User,
     },
     {
       title: "Logout",
@@ -117,6 +124,12 @@ export function AppSidebar({
         url: "/trade-history",
         icon: History,
         isActive: activePage === "trade-history",
+      },
+      {
+        title: "Profile",
+        url: "/profile",
+        icon: User,
+        isActive: activePage === "profile",
       },
       {
         title: "Logout",

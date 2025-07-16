@@ -22,10 +22,14 @@ from agent.kairos_copilot import kairos_copilot
 from agent.autonomous_agent import KairosAutonomousAgent
 from api.trades_history import get_portfolio
 from api.token_price import get_token_price_json
+from api.profile import profile_router
 
 # Initialize FastAPI app and autonomous agent
 app = FastAPI(title="Kairos Trading API", version="2.0.0")
 autonomous_agent = KairosAutonomousAgent()
+
+# Include profile router
+app.include_router(profile_router)
 
 # Add CORS middleware for frontend communication
 app.add_middleware(
@@ -249,21 +253,33 @@ async def generate_session_report(session_id: str):
         )
 
 @app.get("/api/trades/history")
-async def get_trades_history():
-    """Get trade history from Recall API - SIMPLIFIED VERSION"""
+async def get_trades_history(user_id: str = "default"):
+    """Get trade history from Recall API - ENHANCED WITH DYNAMIC API KEYS"""
     try:
-        print("📊 Fetching trade history from Recall API...")
+        print(f"📊 Fetching trade history from Recall API for user: {user_id}...")
         start_time = datetime.now()
         
-        # Get trades data directly from the trades_history module
+        # Get trades data with user-specific API key
         from api.trades_history import get_portfolio
-        recall_data = get_portfolio()
+        recall_data = get_portfolio(user_id)
         
         if not recall_data or isinstance(recall_data, dict) and "error" in recall_data:
-            print(f"⚠️ API Error: {recall_data.get('error') if recall_data else 'No data returned'}")
+            error_msg = recall_data.get('error') if recall_data else 'No data returned'
+            print(f"⚠️ API Error: {error_msg}")
+            
+            # If it's an API key issue, provide helpful message
+            if "key" in error_msg.lower() or "authorization" in error_msg.lower():
+                return {
+                    "trades": [],
+                    "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""},
+                    "message": "Please configure your Recall API key in your profile to view trading data.",
+                    "error": error_msg
+                }
+            
             return {
                 "trades": [],
-                "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""}
+                "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""},
+                "error": error_msg
             }
         
         # Extract trades from the recall API response

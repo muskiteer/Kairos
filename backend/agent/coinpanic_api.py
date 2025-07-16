@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
 """
 CoinPanic API Integration for Cryptocurrency News
+Enhanced with dynamic API key support from user profiles
 """
 
 import requests
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+from typing import Optional
 
 # Load environment variables
 load_dotenv()
 
 class CoinPanicAPI:
-    """CoinPanic API client for crypto news"""
+    """CoinPanic API client for crypto news with dynamic API key support"""
     
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize CoinPanic API client
+        
+        Args:
+            api_key: Optional API key. If not provided, falls back to environment variable
+        """
         self.base_url = "https://cryptopanic.com/api/v1"
-        self.api_key = os.getenv("COINPANIC_API_KEY")
+        self.api_key = api_key or os.getenv("COINPANIC_API_KEY")
+        
+    def set_api_key(self, api_key: str):
+        """Set API key dynamically"""
+        self.api_key = api_key
         
     def get_crypto_news(self, currencies=None, limit=5, kind="news", filter_type="hot"):
         """
