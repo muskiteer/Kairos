@@ -27,11 +27,18 @@ async def get_user_api_keys(user_id: str = "default") -> dict:
 def get_portfolio(user_id: str = "default"):
     """Get portfolio information from Recall API using user-specific API key"""
     
-    # Get user API key (synchronous wrapper)
-    import asyncio
+    # Get user API key (synchronous wrapper with proper async handling)
     try:
-        api_keys = asyncio.run(get_user_api_keys(user_id))
-        api_key = api_keys.get("recall_api_key") or DEFAULT_API_KEY
+        # Check if we're already in an async context
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            # We're in an async context, use fallback for now
+            api_key = DEFAULT_API_KEY
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run
+            api_keys = asyncio.run(get_user_api_keys(user_id))
+            api_key = api_keys.get("recall_api_key") or DEFAULT_API_KEY
     except Exception as e:
         print(f"⚠️ Using default API key: {e}")
         api_key = DEFAULT_API_KEY

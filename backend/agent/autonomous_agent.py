@@ -29,23 +29,37 @@ load_dotenv()
 class KairosAutonomousAgent:
     """Autonomous Trading Agent with Full AI Decision Making"""
     
-    def __init__(self):
+    def __init__(self, user_id: str = "default"):
         """Initialize the autonomous agent"""
-        self.base_copilot = kairos_copilot
+        self.user_id = user_id
+        self.base_copilot = None  # Will be initialized with user_id when needed
         self.autonomous_sessions = {}  # Track active autonomous sessions
         self.memory = []  # Persistent memory for learning
         
         print("🤖 Kairos Autonomous Agent initialized!")
         print("💡 I can trade autonomously for hours, days, or weeks!")
     
+    def _get_copilot(self):
+        """Get or initialize the copilot with user_id"""
+        if not self.base_copilot:
+            from agent.kairos_copilot import KairosTradingCopilot
+            self.base_copilot = KairosTradingCopilot(user_id=self.user_id)
+        return self.base_copilot
+    
     async def process_autonomous_request(self, user_message: str, user_id: str = "default") -> Dict[str, Any]:
         """Process autonomous trading requests"""
+        
+        # Update user_id if different
+        if user_id != self.user_id:
+            self.user_id = user_id
+            self.base_copilot = None  # Reset copilot to reinitialize with new user_id
         
         # Parse autonomous command
         autonomous_params = self._parse_autonomous_command(user_message)
         
         if not autonomous_params:
-            return await self.base_copilot.process_user_message(user_message)
+            copilot = self._get_copilot()
+            return await copilot.process_user_message(user_message)
         
         # Start autonomous session
         session_id = await self._start_autonomous_session(autonomous_params, user_id)
@@ -196,7 +210,7 @@ class KairosAutonomousAgent:
         
         # Get real starting portfolio value
         try:
-            initial_portfolio = get_portfolio()
+            initial_portfolio = get_portfolio(user_id=user_id)
             start_value = self._calculate_real_portfolio_value(initial_portfolio)
         except Exception as e:
             print(f"⚠️ Could not get initial portfolio value: {e}")
@@ -249,7 +263,7 @@ class KairosAutonomousAgent:
         
         # Initialize starting portfolio value
         try:
-            initial_portfolio = get_portfolio()
+            initial_portfolio = get_portfolio(user_id=session["user_id"])
             session["performance"]["start_portfolio_value"] = self._calculate_real_portfolio_value(initial_portfolio)
         except Exception as e:
             print(f"⚠️ Could not get initial portfolio value: {e}")
@@ -303,7 +317,7 @@ class KairosAutonomousAgent:
         
         # Calculate final performance
         try:
-            final_portfolio = get_portfolio()
+            final_portfolio = get_portfolio(user_id=session["user_id"])
             session["performance"]["current_portfolio_value"] = self._calculate_real_portfolio_value(final_portfolio)
             session["performance"]["total_profit_loss"] = (
                 session["performance"]["current_portfolio_value"] - 
@@ -428,7 +442,7 @@ class KairosAutonomousAgent:
         }
         
         try:
-            portfolio_data = get_portfolio()
+            portfolio_data = get_portfolio(user_id=session["user_id"])
             
             if isinstance(portfolio_data, dict) and "balances" in portfolio_data:
                 balances = portfolio_data["balances"]
@@ -817,10 +831,10 @@ class KairosAutonomousAgent:
         """Legacy method - calls real calculation"""
         return self._calculate_real_portfolio_value(portfolio_data)
     
-    def _get_current_portfolio_value(self) -> float:
+    def _get_current_portfolio_value(self, user_id: str = "default") -> float:
         """Get current real portfolio value"""
         try:
-            portfolio = get_portfolio()
+            portfolio = get_portfolio(user_id=user_id)
             return self._calculate_real_portfolio_value(portfolio)
         except Exception as e:
             print(f"⚠️ Error getting current portfolio value: {e}")

@@ -1,21 +1,33 @@
 import json
+import argparse
 from api.token_price import get_token_price_json
 from api.token_balance import get_token_balance
 from api.trades_history import get_portfolio as get_trades_history
 from api.execute import trade_exec, token_addresses
 from api.portfolio import get_portfolio
 
+# Global user_id for CLI session
+current_user_id = "default"
+
+def set_user_id(user_id: str):
+    """Set the current user ID for the CLI session"""
+    global current_user_id
+    current_user_id = user_id
+    print(f"✅ User ID set to: {user_id}")
+
 def print_menu():
     """Display the main menu options"""
     print("\n" + "="*50)
     print("         RECALL TRADING TERMINAL")
+    print(f"         User: {current_user_id}")
     print("="*50)
     print("1. Check Token Price")
     print("2. Check Token Balance")
     print("3. View Trade History")
     print("4. Execute Trade")
     print("5. View Portfolio")
-    print("6. Exit")
+    print("6. Change User ID")
+    print("7. Exit")
     print("="*50)
 
 def check_token_price():
@@ -61,7 +73,7 @@ def view_trade_history():
     print("\n📈 TRADE HISTORY")
     print("-" * 30)
     print("🔍 Fetching trade history...")
-    result = get_trades_history()
+    result = get_trades_history(user_id=current_user_id)
     print(json.dumps(result, indent=2))
 
 def execute_trade():
@@ -128,17 +140,34 @@ def view_portfolio():
     print("\n👛 PORTFOLIO OVERVIEW")
     print("-" * 30)
     print("🔍 Fetching portfolio...")
-    result = get_portfolio()
+    result = get_portfolio(user_id=current_user_id)
     print(json.dumps(result, indent=2))
+
+def change_user_id():
+    """Handle user ID change"""
+    print("\n👤 CHANGE USER ID")
+    print("-" * 30)
+    print(f"Current user ID: {current_user_id}")
+    new_user_id = input("Enter new user ID (or 'back' to return): ").strip()
+    if new_user_id.lower() != 'back' and new_user_id:
+        set_user_id(new_user_id)
 
 def main():
     """Main interactive loop"""
     print("🚀 Welcome to Recall Trading Terminal!")
     
+    # Check for command line arguments
+    parser = argparse.ArgumentParser(description='Recall Trading Terminal')
+    parser.add_argument('--user-id', default='default', help='User ID for API calls')
+    args = parser.parse_args()
+    
+    # Set initial user ID
+    set_user_id(args.user_id)
+    
     while True:
         try:
             print_menu()
-            choice = input("\nSelect an option (1-6): ").strip()
+            choice = input("\nSelect an option (1-7): ").strip()
             
             if choice == '1':
                 check_token_price()
@@ -151,10 +180,12 @@ def main():
             elif choice == '5':
                 view_portfolio()
             elif choice == '6':
+                change_user_id()
+            elif choice == '7':
                 print("\n👋 Thank you for using Recall Trading Terminal!")
                 break
             else:
-                print("❌ Invalid option. Please select 1-6.")
+                print("❌ Invalid option. Please select 1-7.")
                 
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")

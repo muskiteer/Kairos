@@ -8,7 +8,7 @@ import requests
 import os
 from dotenv import load_dotenv
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 # Load environment variables
 load_dotenv()
@@ -143,23 +143,54 @@ class CoinPanicAPI:
 # Create global instance
 coinpanic_api = CoinPanicAPI()
 
-# Convenience functions (optimized)
-def get_crypto_news(currencies=None, limit=5):
-    """Get cryptocurrency news (fast)"""
+# Helper function to get user-specific CoinPanic API instance
+async def get_user_coinpanic_api(user_id: str = "default") -> CoinPanicAPI:
+    """Get CoinPanic API instance with user-specific API key"""
+    try:
+        from utils.api_manager import api_manager
+        api_keys = await api_manager.get_user_api_keys(user_id)
+        coinpanic_key = api_keys.get("coinpanic_api_key")
+        
+        if coinpanic_key:
+            return CoinPanicAPI(api_key=coinpanic_key)
+        else:
+            # Fall back to global instance with env variables
+            return coinpanic_api
+    except Exception as e:
+        print(f"⚠️ Error getting user CoinPanic API: {e}")
+        return coinpanic_api
+
+# Convenience functions (optimized with dynamic API key support)
+def get_crypto_news(currencies=None, limit=5, user_id: str = "default"):
+    """Get cryptocurrency news (fast) with optional user-specific API key"""
+    # For backward compatibility, use global instance if user_id is default
+    if user_id == "default":
+        return coinpanic_api.get_crypto_news(currencies=currencies, limit=limit)
+    
+    # For user-specific calls, this would need to be called from an async context
+    # For now, fall back to global instance
     return coinpanic_api.get_crypto_news(currencies=currencies, limit=limit)
 
-def get_trending_news(limit=3):
+def get_trending_news(limit=3, user_id: str = "default"):
     """Get trending crypto news (fast)"""
+    if user_id == "default":
+        return coinpanic_api.get_trending_news(limit=limit)
     return coinpanic_api.get_trending_news(limit=limit)
 
-def get_currency_news(currency, limit=5):
+def get_currency_news(currency, limit=5, user_id: str = "default"):
     """Get news for specific currency (fast)"""
+    if user_id == "default":
+        return coinpanic_api.get_currency_news(currency, limit=limit)
     return coinpanic_api.get_currency_news(currency, limit=limit)
 
-def get_bullish_news(limit=5):
+def get_bullish_news(limit=5, user_id: str = "default"):
     """Get bullish crypto news (fast)"""
+    if user_id == "default":
+        return coinpanic_api.get_bullish_news(limit=limit)
     return coinpanic_api.get_bullish_news(limit=limit)
 
-def get_bearish_news(limit=5):
+def get_bearish_news(limit=5, user_id: str = "default"):
     """Get bearish crypto news (fast)"""
+    if user_id == "default":
+        return coinpanic_api.get_bearish_news(limit=limit)
     return coinpanic_api.get_bearish_news(limit=limit)

@@ -25,14 +25,17 @@ from api.execute import trade_exec, token_addresses
 class KairosTradingCopilot:
     """Advanced AI Trading Copilot with conversational interface and learning capabilities"""
     
-    def __init__(self):
+    def __init__(self, user_id: str = "default", gemini_api_key: Optional[str] = None):
         """Initialize the Kairos Trading Copilot"""
         # Load environment variables
         from dotenv import load_dotenv
         load_dotenv()
         
+        # Store user ID for dynamic API key retrieval
+        self.user_id = user_id
+        
         # Setup Gemini AI
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("❌ GEMINI_API_KEY not found in .env file")
         
@@ -405,7 +408,7 @@ Start autonomous trading with:
         
         # Step 1: Get current market data
         try:
-            portfolio_data = get_portfolio()
+            portfolio_data = get_portfolio(user_id=self.user_id)
             token_price = get_token_price_json(trade_params["token_to"])
             market_news_response = get_trending_news()
             market_news = market_news_response.get("news", []) if isinstance(market_news_response, dict) else []
@@ -560,7 +563,7 @@ Start autonomous trading with:
                     }
             
             # Regular portfolio inquiry
-            portfolio_data = get_portfolio()
+            portfolio_data = get_portfolio(user_id=self.user_id)
             
             # Format response based on data structure
             if isinstance(portfolio_data, dict) and "error" not in portfolio_data:
@@ -616,7 +619,7 @@ Start autonomous trading with:
             if any(word in message_lower for word in ["history", "trades", "transactions", "trading history"]):
                 try:
                     from api.trades_history import get_portfolio as get_trades_history
-                    history_data = get_trades_history()
+                    history_data = get_trades_history(user_id=self.user_id)
                     
                     if isinstance(history_data, dict) and "error" not in history_data:
                         # Format trade history display

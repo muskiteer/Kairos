@@ -18,15 +18,33 @@ import asyncio
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import our enhanced copilot and autonomous agent
-from agent.kairos_copilot import kairos_copilot
+from agent.kairos_copilot import KairosTradingCopilot
 from agent.autonomous_agent import KairosAutonomousAgent
 from api.trades_history import get_portfolio
 from api.token_price import get_token_price_json
 from api.profile import profile_router
 
-# Initialize FastAPI app and autonomous agent
+# Initialize FastAPI app and store agent instances per user
 app = FastAPI(title="Kairos Trading API", version="2.0.0")
-autonomous_agent = KairosAutonomousAgent()
+user_agents = {}  # Store user-specific agents
+
+def get_user_copilot(user_id: str = "default") -> KairosTradingCopilot:
+    """Get or create a user-specific copilot instance"""
+    if user_id not in user_agents:
+        user_agents[user_id] = {
+            "copilot": KairosTradingCopilot(user_id=user_id),
+            "autonomous": KairosAutonomousAgent(user_id=user_id)
+        }
+    return user_agents[user_id]["copilot"]
+
+def get_user_autonomous_agent(user_id: str = "default") -> KairosAutonomousAgent:
+    """Get or create a user-specific autonomous agent instance"""
+    if user_id not in user_agents:
+        user_agents[user_id] = {
+            "copilot": KairosTradingCopilot(user_id=user_id),
+            "autonomous": KairosAutonomousAgent(user_id=user_id)
+        }
+    return user_agents[user_id]["autonomous"]
 
 # Include profile router
 app.include_router(profile_router)
@@ -137,14 +155,16 @@ async def chat_with_copilot(request: ChatRequest):
     
     try:
         print(f"📨 Received message: {request.message}")
+        user_id = request.user_id or "default"
         
         # Check if this is an autonomous trading request
         if any(keyword in request.message.lower() for keyword in 
                ["autonomous", "start trading session", "trade for", "auto trade", "test agent", "run agent"]):
-            # Process through autonomous agent
+            # Process through user-specific autonomous agent
+            autonomous_agent = get_user_autonomous_agent(user_id)
             autonomous_response = await autonomous_agent.process_autonomous_request(
                 request.message, 
-                request.user_id or "default"
+                user_id
             )
             
             # Ensure data is a dictionary
@@ -168,12 +188,14 @@ async def chat_with_copilot(request: ChatRequest):
         
         # Ensure we have a session for regular copilot
         if not request.session_id:
-            session_id = await kairos_copilot.start_trading_session(request.user_id)
+            copilot = get_user_copilot(user_id)
+            session_id = await copilot.start_trading_session(user_id)
         else:
             session_id = request.session_id
         
-        # Process message through Kairos Copilot
-        copilot_response = await kairos_copilot.process_user_message(request.message)
+        # Process message through user-specific Kairos Copilot
+        copilot = get_user_copilot(user_id)
+        copilot_response = await copilot.process_user_message(request.message)
         
         print(f"🎯 Intent: {copilot_response.get('intent')} (Confidence: {copilot_response.get('confidence', 0):.0%})")
         
@@ -215,10 +237,11 @@ async def chat_with_copilot(request: ChatRequest):
         )
 
 @app.get("/api/sessions/{session_id}/summary")
-async def get_session_summary(session_id: str):
+async def get_session_summary(session_id: str, user_id: str = "default"):
     """Get comprehensive session summary and analytics"""
     try:
-        summary = await kairos_copilot.generate_session_summary(session_id)
+        copilot = get_user_copilot(user_id)
+        summary = await copilot.generate_session_summary(session_id)
         return {
             "session_id": session_id,
             "summary": summary,
@@ -577,9 +600,10 @@ async def get_features():
     }
 
 @app.get("/api/autonomous/status/{session_id}")
-async def get_autonomous_status(session_id: str):
+async def get_autonomous_status(session_id: str, user_id: str = "default"):
     """Get real-time status of autonomous trading session"""
     try:
+        autonomous_agent = get_user_autonomous_agent(user_id)
         if session_id in autonomous_agent.autonomous_sessions:
             session_data = autonomous_agent.autonomous_sessions[session_id]
             return {
@@ -597,9 +621,10 @@ async def get_autonomous_status(session_id: str):
         raise HTTPException(status_code=500, detail=f"Error getting session status: {str(e)}")
 
 @app.get("/api/autonomous/sessions")
-async def list_autonomous_sessions():
+async def list_autonomous_sessions(user_id: str = "default"):
     """List all autonomous trading sessions"""
     try:
+        autonomous_agent = get_user_autonomous_agent(user_id)
         sessions = {}
         for session_id, session_data in autonomous_agent.autonomous_sessions.items():
             sessions[session_id] = {
@@ -620,9 +645,10 @@ async def list_autonomous_sessions():
         raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")
 
 @app.post("/api/autonomous/stop/{session_id}")
-async def stop_autonomous_session(session_id: str):
+async def stop_autonomous_session(session_id: str, user_id: str = "default"):
     """Stop a specific autonomous trading session"""
     try:
+        autonomous_agent = get_user_autonomous_agent(user_id)
         if session_id in autonomous_agent.autonomous_sessions:
             autonomous_agent.autonomous_sessions[session_id]["status"] = "stopped"
             return {
