@@ -20,11 +20,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertTriangle, Save, Eye, EyeOff, Shield, Bot, Wallet, Key, User, Mail, CheckCircle, XCircle } from "lucide-react"
+import { AlertTriangle, Save, Eye, EyeOff, Shield, Bot, Wallet, Key, User, Mail, CheckCircle, XCircle, Trophy, Vote, Flame, Download } from "lucide-react"
+import { kairosLitService } from "@/lib/kairos-lit-service"
+import { AuthGuard, useAuth } from "@/hooks/useAuth"
 
 // Avatar options for users to choose from
 const avatarOptions = [
@@ -58,6 +59,15 @@ interface UserProfile {
 }
 
 export default function ProfilePage() {
+  return (
+    <AuthGuard>
+      <ProfilePageContent />
+    </AuthGuard>
+  )
+}
+
+function ProfilePageContent() {
+  const { userAddress: authUserAddress, authMethod: authAuthMethod, logout } = useAuth()
   const [profile, setProfile] = useState<UserProfile>({
     id: '',
     username: '',
@@ -78,55 +88,201 @@ export default function ProfilePage() {
   const [showApiKeys, setShowApiKeys] = useState(false)
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  
+  // Lit Protocol state - use auth context values
+  const [isLitConnected, setIsLitConnected] = useState(true) // Already connected via auth
+  const [nftPortfolio, setNftPortfolio] = useState<any>(null)
+  const [premiumAccess, setPremiumAccess] = useState(false)
+  
+  // Use auth context values
+  const userAddress = authUserAddress || ''
+  const authMethod = authAuthMethod
 
-  // Load profile data on component mount
+  // Load profile when user address changes
   useEffect(() => {
-    loadProfile()
-  }, [])
+    if (userAddress) {
+      updateProfile('wallet_address', userAddress)
+      updateProfile('id', userAddress)
+      loadDecentralizedProfile()
+      loadNFTPortfolio()
+      checkPremiumAccess()
+    }
+  }, [userAddress])
 
-  const loadProfile = async () => {
+  const checkPremiumAccess = async () => {
+    if (userAddress) {
+      const accessCheck = await kairosLitService.checkAccessNFT(userAddress, 'kairos_premium')
+      setPremiumAccess(accessCheck.hasAccess)
+    }
+  }
+
+  // Remove the authenticateWithWallet function since it's handled by login page
+
+  // 📁 LOAD DECENTRALIZED PROFILE
+  const loadDecentralizedProfile = async () => {
+    if (!userAddress) return
+    
     setIsLoading(true)
     try {
-      const response = await fetch('http://localhost:8000/api/profile', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setProfile(data.profile || profile)
+      const result = await kairosLitService.loadDecentralizedProfile(userAddress)
+      if (result.profile) {
+        setProfile(result.profile)
+        setSaveMessage(result.message)
+      } else {
+        // New user - set defaults
+        setProfile(prev => ({
+          ...prev,
+          id: userAddress,
+          wallet_address: userAddress,
+          created_at: new Date().toISOString()
+        }))
+        setSaveMessage('👋 Welcome! Creating new decentralized profile...')
       }
     } catch (error) {
       console.error('Error loading profile:', error)
+      setSaveMessage('❌ Error loading profile from decentralized storage')
     }
     setIsLoading(false)
   }
 
-  const saveProfile = async () => {
+  // 💾 SAVE DECENTRALIZED PROFILE
+  const saveDecentralizedProfile = async () => {
+    if (!userAddress || !authMethod) {
+      setSaveMessage('❌ Please connect wallet first')
+      return
+    }
+
     setIsSaving(true)
     setSaveMessage('')
     
     try {
-      const response = await fetch('http://localhost:8000/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile })
-      })
+      const result = await kairosLitService.saveDecentralizedProfile(profile, userAddress)
+      setSaveMessage(result.message)
       
-      if (response.ok) {
-        const data = await response.json()
-        setSaveMessage('✅ Profile saved successfully!')
-        setProfile(data.profile)
-      } else {
-        setSaveMessage('❌ Failed to save profile')
+      if (result.success) {
+        setProfile(prev => ({
+          ...prev,
+          updated_at: new Date().toISOString()
+        }))
+        
+        // Mint achievement for profile completion
+        if (isProfileComplete) {
+          await kairosLitService.mintAchievementNFT('profile_complete', userAddress, { timestamp: new Date().toISOString() })
+        }
       }
     } catch (error) {
       console.error('Error saving profile:', error)
-      setSaveMessage('❌ Error saving profile')
+      setSaveMessage('❌ Error saving profile to decentralized storage')
     }
     
     setIsSaving(false)
-    setTimeout(() => setSaveMessage(''), 3000)
+    setTimeout(() => setSaveMessage(''), 5000)
+  }
+
+  // 🗝️ ENCRYPT AND SAVE API KEYS
+  const saveEncryptedAPIKeys = async () => {
+    if (!userAddress || !authMethod) {
+      setSaveMessage('❌ Please connect wallet first')
+      return
+    }
+
+    try {
+      const apiKeys = {
+        recall_api_key: profile.recall_api_key,
+        coinpanic_api_key: profile.coinpanic_api_key
+      }
+
+      const result = await kairosLitService.encryptAndStoreAPIKeys(apiKeys, userAddress)
+      setSaveMessage(result.message)
+      
+      if (result.success) {
+        // Mint achievement for API key setup
+        await kairosLitService.mintAchievementNFT('api_setup', userAddress, { timestamp: new Date().toISOString() })
+      }
+    } catch (error) {
+      console.error('Error encrypting API keys:', error)
+      setSaveMessage('❌ Failed to encrypt API keys')
+    }
+  }
+
+  // 🎯 LOAD API KEYS
+  const loadDecryptedAPIKeys = async () => {
+    if (!userAddress) return
+
+    try {
+      const result = await kairosLitService.decryptAPIKeys(userAddress)
+      if (result.success) {
+        updateProfile('recall_api_key', result.apiKeys.recall_api_key)
+        updateProfile('coinpanic_api_key', result.apiKeys.coinpanic_api_key)
+        setSaveMessage(result.message)
+      }
+    } catch (error) {
+      console.error('Error decrypting API keys:', error)
+      setSaveMessage('❌ Failed to decrypt API keys')
+    }
+  }
+
+  // 🏆 LOAD NFT PORTFOLIO
+  const loadNFTPortfolio = async () => {
+    if (!userAddress) return
+
+    try {
+      const result = await kairosLitService.getUserNFTPortfolio(userAddress)
+      if (result.success) {
+        setNftPortfolio(result.portfolio)
+      }
+    } catch (error) {
+      console.error('Error loading NFT portfolio:', error)
+    }
+  }
+
+  // 🎫 MINT DEMO NFTS
+  const mintDemoNFTs = async () => {
+    if (!userAddress) return
+
+    try {
+      // Mint various demo NFTs
+      await kairosLitService.mintConsumableNFT('ai_boost', userAddress)
+      await kairosLitService.mintGovernanceNFT(userAddress, 'early_supporter')
+      
+      // Reload portfolio
+      await loadNFTPortfolio()
+      setSaveMessage('🎁 Demo NFTs minted successfully!')
+    } catch (error) {
+      console.error('Error minting demo NFTs:', error)
+      setSaveMessage('❌ Failed to mint demo NFTs')
+    }
+  }
+
+  // 🚀 CREATE TRADING SESSION
+  const createAutonomousTradingSession = async () => {
+    if (!userAddress || !authMethod) {
+      setSaveMessage('❌ Please connect wallet first')
+      return
+    }
+
+    try {
+      const sessionData = {
+        authMethod,
+        duration: 3600, // 1 hour
+        maxTradeAmount: 1000,
+        allowedTokens: ['ETH', 'USDC', 'WBTC']
+      }
+
+      const result = await kairosLitService.createAuthorizedTradingSession(sessionData, userAddress)
+      setSaveMessage(result.message)
+      
+      if (result.success && result.pkp) {
+        // Mint achievement for first trading session
+        await kairosLitService.mintAchievementNFT('first_session', userAddress, { 
+          sessionId: result.pkp.publicKey,
+          timestamp: new Date().toISOString() 
+        })
+      }
+    } catch (error) {
+      console.error('Error creating trading session:', error)
+      setSaveMessage('❌ Failed to create trading session')
+    }
   }
 
   const updateProfile = (field: keyof UserProfile, value: any) => {
@@ -158,48 +314,102 @@ export default function ProfilePage() {
         </header>
 
         <div className="flex flex-1 flex-col gap-6 p-6 pt-0">
-          {/* Profile Completion Status */}
+          {/* Lit Protocol Status */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Profile Setup
-                {isProfileComplete ? (
+                <Shield className="h-5 w-5" />
+                🔐 Decentralized Profile
+                {isLitConnected && userAddress ? (
                   <Badge className="bg-green-500 text-white">
                     <CheckCircle className="h-3 w-3 mr-1" />
-                    Complete
+                    Connected
                   </Badge>
                 ) : (
                   <Badge variant="destructive">
                     <XCircle className="h-3 w-3 mr-1" />
-                    Incomplete
+                    Not Connected
+                  </Badge>
+                )}
+                {premiumAccess && (
+                  <Badge className="bg-purple-500 text-white">
+                    <Trophy className="h-3 w-3 mr-1" />
+                    Premium
                   </Badge>
                 )}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Complete your profile to start trading with Kairos AI. Your API keys are securely stored and never shared.
+                Your profile is secured with Lit Protocol encryption and stored on IPFS. No database required!
               </p>
+              {userAddress && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Connected: {userAddress.substring(0, 10)}...{userAddress.substring(userAddress.length - 8)}
+                </p>
+              )}
             </CardContent>
           </Card>
 
-          <Tabs defaultValue="personal" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs defaultValue="authentication" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-6">
+              <TabsTrigger value="authentication">Connect</TabsTrigger>
               <TabsTrigger value="personal">Personal</TabsTrigger>
               <TabsTrigger value="api-keys">API Keys</TabsTrigger>
-              <TabsTrigger value="wallet">Wallet</TabsTrigger>
+              <TabsTrigger value="nfts">NFTs</TabsTrigger>
+              <TabsTrigger value="trading">Trading</TabsTrigger>
               <TabsTrigger value="consent">Consent</TabsTrigger>
             </TabsList>
 
-            {/* Personal Information Tab */}
+            {/* Authentication Tab */}
+            <TabsContent value="authentication" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>🔐 Wallet Authentication</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg">
+                      <p className="text-sm text-green-700 dark:text-green-300">
+                        ✅ Wallet connected and authenticated with Lit Protocol!
+                      </p>
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                        Address: {userAddress.substring(0, 10)}...{userAddress.substring(userAddress.length - 8)}
+                      </p>
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                        Your data is now encrypted and decentralized.
+                      </p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Button onClick={loadDecryptedAPIKeys} variant="outline">
+                        <Key className="h-4 w-4 mr-2" />
+                        Load Encrypted Keys
+                      </Button>
+                      <Button onClick={mintDemoNFTs} variant="outline">
+                        <Trophy className="h-4 w-4 mr-2" />
+                        Mint Demo NFTs
+                      </Button>
+                      <Button onClick={logout} variant="destructive">
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Logout
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Personal Tab */}
             <TabsContent value="personal" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Personal Information</CardTitle>
+                  <CardTitle>👤 Personal Information</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Stored on IPFS, encrypted with Lit Protocol
+                  </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Avatar Selection */}
                   <div className="space-y-4">
                     <Label>Profile Avatar</Label>
                     <div className="flex items-center gap-4">
@@ -233,7 +443,6 @@ export default function ProfilePage() {
                     )}
                   </div>
 
-                  {/* Username */}
                   <div className="space-y-2">
                     <Label htmlFor="username">Username</Label>
                     <Input
@@ -244,7 +453,6 @@ export default function ProfilePage() {
                     />
                   </div>
 
-                  {/* Email */}
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
                     <Input
@@ -265,26 +473,13 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Key className="h-5 w-5" />
-                    API Configuration
+                    🔒 Encrypted API Configuration
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Your API keys are encrypted and stored securely. They're used dynamically by the backend without hardcoding.
+                    API keys are encrypted with Lit Protocol and stored on IPFS. Only you can decrypt them.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Show/Hide API Keys Toggle */}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowApiKeys(!showApiKeys)}
-                    >
-                      {showApiKeys ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      {showApiKeys ? 'Hide' : 'Show'} API Keys
-                    </Button>
-                  </div>
-
-                  {/* Recall API Key */}
                   <div className="space-y-2">
                     <Label htmlFor="recall-api">Recall API Key</Label>
                     <Input
@@ -294,15 +489,8 @@ export default function ProfilePage() {
                       onChange={(e) => updateProfile('recall_api_key', e.target.value)}
                       placeholder="Enter your Recall API key"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Required for trade execution. Get yours at{" "}
-                      <a href="https://recall.trade" target="_blank" className="text-primary hover:underline">
-                        recall.trade
-                      </a>
-                    </p>
                   </div>
 
-                  {/* CoinPanic API Key */}
                   <div className="space-y-2">
                     <Label htmlFor="coinpanic-api">CoinPanic API Key</Label>
                     <Input
@@ -312,23 +500,32 @@ export default function ProfilePage() {
                       onChange={(e) => updateProfile('coinpanic_api_key', e.target.value)}
                       placeholder="Enter your CoinPanic API key"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Required for market news analysis. Get yours at{" "}
-                      <a href="https://cryptopanic.com/developers/api/" target="_blank" className="text-primary hover:underline">
-                        cryptopanic.com
-                      </a>
-                    </p>
                   </div>
 
-                  {/* API Security Notice */}
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => setShowApiKeys(!showApiKeys)}
+                      variant="outline"
+                    >
+                      {showApiKeys ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                      {showApiKeys ? 'Hide' : 'Show'} Keys
+                    </Button>
+                    <Button 
+                      onClick={saveEncryptedAPIKeys}
+                      disabled={!userAddress}
+                    >
+                      <Shield className="h-4 w-4 mr-2" />
+                      Encrypt & Store
+                    </Button>
+                  </div>
+
                   <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
                     <div className="flex items-start gap-3">
                       <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
                       <div>
-                        <h4 className="font-medium text-blue-900 dark:text-blue-100">Secure API Storage</h4>
+                        <h4 className="font-medium text-blue-900 dark:text-blue-100">No Database Storage</h4>
                         <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          Your API keys are encrypted in our database and only accessible to your trading sessions. 
-                          We never log or share your keys with third parties.
+                          Your API keys are never stored in any database. They're encrypted with your wallet signature and stored on IPFS.
                         </p>
                       </div>
                     </div>
@@ -337,27 +534,96 @@ export default function ProfilePage() {
               </Card>
             </TabsContent>
 
-            {/* Wallet Tab */}
-            <TabsContent value="wallet" className="space-y-6">
+            {/* NFTs Tab */}
+            <TabsContent value="nfts" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Wallet className="h-5 w-5" />
-                    Connected Wallet
+                    <Trophy className="h-5 w-5" />
+                    🏆 Your NFT Portfolio
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="wallet">Wallet Address</Label>
-                    <Input
-                      id="wallet"
-                      value={profile.wallet_address}
-                      onChange={(e) => updateProfile('wallet_address', e.target.value)}
-                      placeholder="0x... (Optional - for portfolio tracking)"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Connect your wallet for enhanced portfolio tracking and transaction history.
+                <CardContent>
+                  {nftPortfolio ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center p-4 border rounded-lg">
+                          <h4 className="font-semibold">Strategies</h4>
+                          <p className="text-2xl font-bold text-blue-600">{nftPortfolio.strategies?.length || 0}</p>
+                        </div>
+                        <div className="text-center p-4 border rounded-lg">
+                          <h4 className="font-semibold">Achievements</h4>
+                          <p className="text-2xl font-bold text-green-600">{nftPortfolio.achievements?.length || 0}</p>
+                        </div>
+                        <div className="text-center p-4 border rounded-lg">
+                          <h4 className="font-semibold">Governance</h4>
+                          <p className="text-2xl font-bold text-purple-600">{nftPortfolio.governance?.length || 0}</p>
+                        </div>
+                        <div className="text-center p-4 border rounded-lg">
+                          <h4 className="font-semibold">Consumables</h4>
+                          <p className="text-2xl font-bold text-orange-600">{nftPortfolio.consumables?.length || 0}</p>
+                        </div>
+                      </div>
+
+                      {nftPortfolio.achievements && nftPortfolio.achievements.length > 0 && (
+                        <div>
+                          <h4 className="font-semibold mb-2">🎖️ Recent Achievements</h4>
+                          <div className="space-y-2">
+                            {nftPortfolio.achievements.slice(-3).map((achievement: any, index: number) => (
+                              <div key={index} className="p-3 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
+                                <p className="font-medium">{achievement.name}</p>
+                                <p className="text-sm text-muted-foreground">{achievement.metadata.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Trophy className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Connect your wallet to view your NFT portfolio</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Trading Tab */}
+            <TabsContent value="trading" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Bot className="h-5 w-5" />
+                    🚀 Autonomous Trading
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Create secure, time-limited autonomous trading sessions using Lit Protocol PKPs.
                     </p>
+                    
+                    <Button 
+                      onClick={createAutonomousTradingSession}
+                      disabled={!userAddress}
+                      className="w-full"
+                    >
+                      <Bot className="h-4 w-4 mr-2" />
+                      Create Authorized Trading Session
+                    </Button>
+
+                    <div className="bg-yellow-50 dark:bg-yellow-950 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                      <div className="flex items-start gap-3">
+                        <Download className="h-5 w-5 text-yellow-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-yellow-900 dark:text-yellow-100">Trading Reports Download</h4>
+                          <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                            After trading sessions end, reports will be automatically downloaded to your browser. No email required!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -367,92 +633,47 @@ export default function ProfilePage() {
             <TabsContent value="consent" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Terms & Consent</CardTitle>
+                  <CardTitle>📋 Consent & Risk Acknowledgment</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Terms of Service */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="consent-terms"
-                      checked={profile.consent_terms}
-                      onChange={(e) => updateProfile('consent_terms', e.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <Label htmlFor="consent-terms" className="font-medium">
-                        I agree to the Terms of Service
+                  <div className="space-y-4">
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="consent-terms"
+                        checked={profile.consent_terms}
+                        onChange={(e) => updateProfile('consent_terms', e.target.checked)}
+                        className="mt-1"
+                      />
+                      <Label htmlFor="consent-terms" className="text-sm">
+                        I agree to the Terms of Service and understand that this is experimental technology
                       </Label>
-                      <p className="text-sm text-muted-foreground">
-                        By checking this box, you agree to our terms and conditions for using Kairos AI trading services.
-                      </p>
                     </div>
-                  </div>
 
-                  {/* Trading Risks */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="consent-risks"
-                      checked={profile.consent_risks}
-                      onChange={(e) => updateProfile('consent_risks', e.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <Label htmlFor="consent-risks" className="font-medium">
-                        I understand the trading risks
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="consent-risks"
+                        checked={profile.consent_risks}
+                        onChange={(e) => updateProfile('consent_risks', e.target.checked)}
+                        className="mt-1"
+                      />
+                      <Label htmlFor="consent-risks" className="text-sm">
+                        I understand the risks of cryptocurrency trading and autonomous AI decision making
                       </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Cryptocurrency trading involves substantial risk of loss. Past performance does not guarantee future results.
-                      </p>
                     </div>
-                  </div>
 
-                  {/* Data Usage */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="consent-data"
-                      checked={profile.consent_data}
-                      onChange={(e) => updateProfile('consent_data', e.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <Label htmlFor="consent-data" className="font-medium">
-                        Data usage consent (Optional)
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="consent-data"
+                        checked={profile.consent_data}
+                        onChange={(e) => updateProfile('consent_data', e.target.checked)}
+                        className="mt-1"
+                      />
+                      <Label htmlFor="consent-data" className="text-sm">
+                        I consent to decentralized data storage on IPFS with Lit Protocol encryption
                       </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Allow anonymous usage analytics to improve Kairos AI. Your API keys and personal data are never included.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Trading Warning */}
-                  <div className="bg-yellow-50 dark:bg-yellow-950 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                      <div>
-                        <h4 className="font-medium text-yellow-900 dark:text-yellow-100">Important Trading Warning</h4>
-                        <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                          Kairos AI is a powerful trading tool, but all investment decisions are ultimately your responsibility. 
-                          Never invest more than you can afford to lose. Start with small amounts and test strategies carefully.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* About Kairos AI */}
-                  <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-                    <div className="flex items-start gap-3">
-                      <Bot className="h-5 w-5 text-primary mt-0.5" />
-                      <div>
-                        <h4 className="font-medium">About Kairos AI</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Kairos is an intelligent trading copilot powered by Google Gemini AI. It analyzes market sentiment, 
-                          news, and portfolio data to provide informed trading recommendations. The system supports both 
-                          conversational trading assistance and fully autonomous trading sessions with customizable parameters.
-                        </p>
-                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -462,23 +683,27 @@ export default function ProfilePage() {
 
           {/* Save Button */}
           <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm">
               {saveMessage && (
-                <span className={saveMessage.includes('✅') ? 'text-green-600' : 'text-red-600'}>
+                <span className={saveMessage.includes('✅') || saveMessage.includes('🔗') || saveMessage.includes('🏆') ? 'text-green-600' : 'text-red-600'}>
                   {saveMessage}
                 </span>
               )}
             </div>
-            <Button onClick={saveProfile} disabled={isSaving} className="flex items-center gap-2">
+            <Button 
+              onClick={saveDecentralizedProfile} 
+              disabled={isSaving || !userAddress} 
+              className="flex items-center gap-2"
+            >
               {isSaving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Saving...
+                  Saving to IPFS...
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  Save Profile
+                  Save to Decentralized Storage
                 </>
               )}
             </Button>

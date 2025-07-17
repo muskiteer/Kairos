@@ -77,17 +77,18 @@ class PowerfulGeminiTradingAgent:
             
             if coinpanic_key:
                 self.coinpanic_api = CoinPanicAPI(api_key=coinpanic_key)
-                print(f"{Fore.GREEN}✅ CoinPanic API initialized with user key{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}✅ CoinPanic API initialized with decrypted user key{Style.RESET_ALL}")
             else:
-                print(f"{Fore.YELLOW}⚠️ No CoinPanic API key found for user {self.user_id}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}⚠️ No CoinPanic API key found - using basic features{Style.RESET_ALL}")
                 self.coinpanic_api = CoinPanicAPI()  # Use fallback
                 
         except Exception as e:
             print(f"{Fore.RED}❌ Error initializing dynamic APIs: {e}{Style.RESET_ALL}")
             self.coinpanic_api = CoinPanicAPI()  # Use fallback
-        print(f"{Fore.CYAN}🚀 Complete Recall API & CoinPanic News integration enabled{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}🚀 Decentralized API integration enabled{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}⚡ Ready to analyze, trade, and provide expert insights!{Style.RESET_ALL}")
         print(f"{Fore.MAGENTA}🧠 Using Gemini-1.5-Pro with maximum intelligence settings{Style.RESET_ALL}")
+        print(f"{Fore.BLUE}🔐 No environment variables or database needed!{Style.RESET_ALL}")
     
     def get_portfolio_data(self):
         """Get comprehensive portfolio information with enhanced error handling"""

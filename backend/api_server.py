@@ -22,7 +22,8 @@ from agent.kairos_copilot import KairosTradingCopilot
 from agent.autonomous_agent import KairosAutonomousAgent
 from api.trades_history import get_portfolio
 from api.token_price import get_token_price_json
-from api.profile import profile_router
+from api.lit_protocol_service import lit_api_service, report_generator
+from utils.api_manager import api_manager
 
 # Initialize FastAPI app and store agent instances per user
 app = FastAPI(title="Kairos Trading API", version="2.0.0")
@@ -46,8 +47,8 @@ def get_user_autonomous_agent(user_id: str = "default") -> KairosAutonomousAgent
         }
     return user_agents[user_id]["autonomous"]
 
-# Include profile router
-app.include_router(profile_router)
+# Initialize services
+lit_api_service.initialize()  # Initialize Lit Protocol service
 
 # Add CORS middleware for frontend communication
 app.add_middleware(
@@ -121,7 +122,7 @@ async def health_check():
         copilot_ready=True,
         features=[
             "Gemini AI Integration",
-            "Supabase Database", 
+            "Lit Protocol Decentralized Storage", 
             "Vincent AI Policy Engine",
             "Recall API Trading",
             "CoinPanic News Feed",
@@ -134,7 +135,8 @@ async def health_check():
 async def create_trading_session(request: SessionRequest):
     """Create a new trading session"""
     try:
-        session_id = await kairos_copilot.start_trading_session(request.user_id)
+        copilot = get_user_copilot(request.user_id)
+        session_id = await copilot.start_trading_session(request.user_id)
         
         return SessionResponse(
             session_id=session_id,
@@ -295,7 +297,7 @@ async def get_trades_history(user_id: str = "default"):
                 return {
                     "trades": [],
                     "stats": {"totalTrades": 0, "totalVolume": 0, "successRate": 0, "totalFees": 0, "avgTradeSize": 0, "mostTradedToken": ""},
-                    "message": "Please configure your Recall API key in your profile to view trading data.",
+                    "message": "Please connect your wallet and configure your Recall API key to view trading data.",
                     "error": error_msg
                 }
             
@@ -897,6 +899,64 @@ async def execute_trade(request: TradeRequest):
             status_code=500,
             detail=f"Failed to execute trade: {str(e)}"
         )
+
+# Lit Protocol Integration Endpoints
+@app.post("/api/lit/store-api-key")
+async def store_encrypted_api_key(request: dict):
+    """Store encrypted API key using Lit Protocol"""
+    try:
+        wallet_address = request.get("wallet_address")
+        api_key_name = request.get("api_key_name") 
+        encrypted_data = request.get("encrypted_data")
+        
+        if not all([wallet_address, api_key_name, encrypted_data]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+            
+        success = await lit_api_service.store_encrypted_api_key(
+            wallet_address, api_key_name, encrypted_data
+        )
+        
+        if success:
+            return {"success": True, "message": "API key stored successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to store API key")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/lit/api-keys/{wallet_address}")
+async def get_user_api_keys(wallet_address: str):
+    """Get list of stored API keys for a wallet"""
+    try:
+        api_keys = await lit_api_service.get_user_api_keys(wallet_address)
+        return {"api_keys": api_keys}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/lit/generate-report")
+async def generate_decentralized_report(request: dict):
+    """Generate and store report using decentralized storage"""
+    try:
+        wallet_address = request.get("wallet_address")
+        report_data = request.get("report_data")
+        report_type = request.get("report_type", "trading_session")
+        
+        if not all([wallet_address, report_data]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+            
+        result = await report_generator.generate_and_store_report(
+            wallet_address, report_data, report_type
+        )
+        
+        return {
+            "success": True,
+            "ipfs_hash": result["ipfs_hash"],
+            "download_url": result["download_url"],
+            "report_id": result["report_id"]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Additional news endpoints that frontend might be calling
 @app.get("/api/market/news")

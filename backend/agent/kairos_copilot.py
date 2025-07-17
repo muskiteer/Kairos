@@ -14,7 +14,6 @@ from datetime import datetime
 import uuid
 
 # Import existing modules
-from database.supabase_client import supabase_client
 from agent.vincent_agent import vincent_agent
 from agent.coinpanic_api import get_crypto_news, get_trending_news
 from api.portfolio import get_portfolio
@@ -50,23 +49,36 @@ class KairosTradingCopilot:
             )
         )
         
-        # Initialize session
+        # Initialize session management with local storage
         self.current_session = None
         self.conversation_history = []
         self.trade_context = {}
+        self.trading_sessions = {}  # Store sessions locally
         
         print("🚀 Kairos Trading Copilot initialized!")
         print("💡 I'm your AI trading assistant. Let's start a conversation about your trading goals.")
     
     async def start_trading_session(self, user_id: str = "default") -> str:
-        """Start a new trading session"""
+        """Start a new trading session with local storage"""
         try:
-            self.current_session = await supabase_client.create_trading_session(user_id)
-            print(f"📊 Trading session started: {self.current_session}")
-            return self.current_session
+            # Create local session
+            session_id = str(uuid.uuid4())
+            self.current_session = session_id
+            
+            # Store session data locally
+            self.trading_sessions[session_id] = {
+                "user_id": user_id,
+                "created_at": datetime.now().isoformat(),
+                "trades": [],
+                "strategies": [],
+                "status": "active"
+            }
+            
+            print(f"📊 Trading session started: {session_id}")
+            return session_id
         except Exception as e:
             print(f"⚠️ Session creation error: {e}")
-            # Fallback to local session
+            # Fallback to UUID session
             self.current_session = str(uuid.uuid4())
             return self.current_session
     
@@ -473,21 +485,19 @@ Start autonomous trading with:
                 # Execute the trade
                 trade_result = trade_exec(from_address, to_address, float(trade_params["amount"]))
                 
-                # Log trade to database
-                if self.current_session:
+                # Log trade locally
+                if self.current_session and self.current_session in self.trading_sessions:
                     try:
-                        await supabase_client.log_trade(
-                            self.current_session,
-                            {
-                                "trade_type": "swap",
-                                "from_token": trade_params["token_from"],
-                                "to_token": trade_params["token_to"],
-                                "amount": trade_params["amount"],
-                                "success": trade_result.get("success", False),
-                                "market_conditions": {"news": market_news[:3] if market_news else []}
-                            },
-                            ai_reasoning
-                        )
+                        trade_log = {
+                            "trade_type": "swap",
+                            "from_token": trade_params["token_from"],
+                            "to_token": trade_params["token_to"],
+                            "amount": trade_params["amount"],
+                            "success": trade_result.get("success", False),
+                            "market_conditions": {"news": market_news[:3] if market_news else []},
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        self.trading_sessions[self.current_session]["trades"].append(trade_log)
                     except Exception as e:
                         print(f"Trade logging error: {e}")
                 
@@ -745,13 +755,20 @@ Start autonomous trading with:
     async def _handle_strategy_discussion(self, message: str) -> Dict[str, Any]:
         """Handle strategy-related conversations"""
         
-        # Search for similar strategies in vector DB
+        # Search for similar strategies locally
         try:
-            # Generate embedding for current message (simplified)
-            # In production, use proper embedding model
-            query_embedding = [0.1] * 1536  # Placeholder
+            # Use local strategy storage instead of database
+            similar_strategies = []
             
-            similar_strategies = await supabase_client.search_similar_strategies(query_embedding)
+            # Check if we have any stored strategies in current session
+            if self.current_session and self.current_session in self.trading_sessions:
+                session_strategies = self.trading_sessions[self.current_session].get("strategies", [])
+                # Simple keyword matching for similar strategies
+                message_lower = message.lower()
+                for strategy in session_strategies:
+                    if any(keyword in strategy.get("description", "").lower() 
+                          for keyword in message_lower.split()):
+                        similar_strategies.append(strategy)
             
             strategy_prompt = f"""
             As Kairos, discuss trading strategy for: "{message}"
@@ -833,10 +850,22 @@ Start autonomous trading with:
             }
     
     async def generate_session_summary(self, session_id: str) -> Dict[str, Any]:
-        """Generate comprehensive session summary"""
+        """Generate comprehensive session summary using local data"""
         
         try:
-            analytics = await supabase_client.get_session_analytics(session_id)
+            # Get analytics from local session storage
+            analytics = {}
+            if session_id in self.trading_sessions:
+                session_data = self.trading_sessions[session_id]
+                analytics = {
+                    "session_id": session_id,
+                    "user_id": session_data.get("user_id"),
+                    "created_at": session_data.get("created_at"),
+                    "trades_count": len(session_data.get("trades", [])),
+                    "strategies_count": len(session_data.get("strategies", [])),
+                    "trades": session_data.get("trades", []),
+                    "status": session_data.get("status", "active")
+                }
             
             summary_prompt = f"""
             Generate a comprehensive trading session summary:

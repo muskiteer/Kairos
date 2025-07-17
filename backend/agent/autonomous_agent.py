@@ -14,7 +14,7 @@ import os
 from dotenv import load_dotenv
 
 # Import existing modules
-from agent.kairos_copilot import kairos_copilot
+from agent.kairos_copilot import KairosTradingCopilot
 from api.portfolio import get_portfolio
 from api.token_price import get_token_price_json
 from api.token_balance import get_token_balance
@@ -22,7 +22,6 @@ from api.execute import trade_exec, token_addresses
 from api.trades_history import get_portfolio as get_trades_history
 from agent.coinpanic_api import get_trending_news
 from agent.vincent_agent import vincent_agent
-from database.supabase_client import supabase_client
 
 load_dotenv()
 
@@ -194,19 +193,24 @@ class KairosAutonomousAgent:
         }
     
     async def _start_autonomous_session(self, params: Dict[str, Any], user_id: str) -> str:
-        """Start an autonomous trading session with real database logging"""
+        """Start an autonomous trading session with local storage"""
         
         session_id = str(uuid.uuid4())
         
-        # Store session in database - FIXED
+        # Store session locally
         try:
-            # Use the correct method signature - only user_id parameter
-            db_session_id = await supabase_client.create_trading_session(user_id)
-            print(f"📊 Database session created: {db_session_id}")
+            self.autonomous_sessions[session_id] = {
+                "user_id": user_id,
+                "created_at": datetime.now().isoformat(),
+                "params": params,
+                "trades": [],
+                "status": "active"
+            }
+            print(f"📊 Local session created: {session_id}")
             
         except Exception as e:
-            print(f"⚠️ Could not store session in database: {e}")
-            # Continue without database storage for now
+            print(f"⚠️ Could not create session: {e}")
+            # Continue with basic session
         
         # Get real starting portfolio value
         try:
@@ -442,7 +446,7 @@ class KairosAutonomousAgent:
         }
         
         try:
-            portfolio_data = get_portfolio(user_id=session["user_id"])
+            portfolio_data = get_portfolio(user_id=self.user_id)
             
             if isinstance(portfolio_data, dict) and "balances" in portfolio_data:
                 balances = portfolio_data["balances"]

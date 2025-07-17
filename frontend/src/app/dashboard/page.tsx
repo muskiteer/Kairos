@@ -34,6 +34,7 @@ import {
   ArrowDownRight,
   Loader2
 } from "lucide-react"
+import { AuthGuard } from "@/hooks/useAuth"
 
 // Supported tokens for price tracking
 const TOP_TOKENS = [
@@ -75,6 +76,14 @@ interface PortfolioStats {
 }
 
 export default function DashboardPage() {
+  return (
+    <AuthGuard>
+      <DashboardContent />
+    </AuthGuard>
+  )
+}
+
+function DashboardContent() {
   const [tokenPrices, setTokenPrices] = useState<Record<string, TokenPrice>>({})
   const [tokenBalances, setTokenBalances] = useState<Record<string, TokenBalance>>({})
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats>({
