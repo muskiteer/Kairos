@@ -15,7 +15,12 @@ import os
 import asyncio
 
 # Add the backend directory to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(backend_dir)
+
+# Load environment variables from the backend directory
+from dotenv import load_dotenv
+load_dotenv(os.path.join(backend_dir, '.env'))
 
 # Import our enhanced copilot and autonomous agent
 from agent.kairos_copilot import KairosTradingCopilot

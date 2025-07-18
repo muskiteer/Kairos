@@ -140,6 +140,78 @@ class SupabaseClient:
                 "avg_trade_pnl": total_pnl / total_trades if total_trades > 0 else 0
             }
         }
+    
+    # AI Strategies Management
+    def get_strategies_for_session(self, session_id: str) -> List[dict]:
+        """Get all active strategies for a session"""
+        try:
+            result = self.client.table("ai_strategies").select("*").eq("session_id", session_id).eq("is_active", True).execute()
+            return result.data if result.data else []
+        except Exception as e:
+            print(f"⚠️ Error fetching strategies: {e}")
+            return []
+    
+    def insert_strategy(self, strategy_data: dict) -> dict:
+        """Insert a new strategy record"""
+        try:
+            # Ensure all required fields are present
+            strategy_record = {
+                "id": str(uuid.uuid4()),
+                "session_id": strategy_data.get("session_id"),
+                "strategy_name": strategy_data.get("strategy_name", "unknown"),
+                "strategy_type": strategy_data.get("strategy_type", "custom"),
+                "strategy_description": strategy_data.get("strategy_description", ""),
+                "strategy_parameters": strategy_data.get("strategy_parameters", {}),
+                "performance_metrics": strategy_data.get("performance_metrics", {}),
+                "market_conditions": strategy_data.get("market_conditions", {}),
+                "risk_assessment": strategy_data.get("risk_assessment", {}),
+                "success_rate": strategy_data.get("success_rate", 0.0),
+                "is_active": strategy_data.get("is_active", True),
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            result = self.client.table("ai_strategies").insert(strategy_record).execute()
+            return result.data[0] if result.data else {}
+        except Exception as e:
+            print(f"⚠️ Error inserting strategy: {e}")
+            return {}
+    
+    def update_strategy_performance(self, strategy_id: str, success: bool, performance_data: dict):
+        """Update strategy performance after execution"""
+        try:
+            # Get current strategy
+            current = self.client.table("ai_strategies").select("*").eq("id", strategy_id).execute()
+            if not current.data:
+                return
+            
+            strategy = current.data[0]
+            current_success_rate = strategy.get("success_rate", 0.0)
+            current_metrics = strategy.get("performance_metrics", {})
+            
+            # Update success rate (simple moving average)
+            usage_count = current_metrics.get("usage_count", 0) + 1
+            if success:
+                new_success_rate = ((current_success_rate * (usage_count - 1)) + 1.0) / usage_count
+            else:
+                new_success_rate = (current_success_rate * (usage_count - 1)) / usage_count
+            
+            # Update performance metrics
+            updated_metrics = {
+                **current_metrics,
+                "usage_count": usage_count,
+                "last_used": datetime.utcnow().isoformat(),
+                **performance_data
+            }
+            
+            # Update the strategy
+            self.client.table("ai_strategies").update({
+                "success_rate": new_success_rate,
+                "performance_metrics": updated_metrics,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", strategy_id).execute()
+            
+        except Exception as e:
+            print(f"⚠️ Error updating strategy performance: {e}")
 
 # Global instance
 supabase_client = SupabaseClient()

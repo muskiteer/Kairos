@@ -35,9 +35,30 @@ def get_token_price_json(symbol):
     }
     try:
         resp = requests.get(PRICE_ENDPOINT, params=params, headers=headers, timeout=30)
-        return resp.json()
+        
+        # Check if response status is OK
+        if resp.status_code != 200:
+            return {
+                "error": f"API request failed with status {resp.status_code}",
+                "status_code": resp.status_code,
+                "response_text": resp.text[:500]  # First 500 chars for debugging
+            }
+        
+        # Try to parse JSON response
+        try:
+            return resp.json()
+        except json.JSONDecodeError as json_err:
+            return {
+                "error": f"Invalid JSON response: {str(json_err)}",
+                "status_code": resp.status_code,
+                "response_text": resp.text[:500],  # First 500 chars for debugging
+                "content_type": resp.headers.get('Content-Type', 'unknown')
+            }
+            
+    except requests.exceptions.RequestException as req_err:
+        return {"error": f"Request failed: {str(req_err)}"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Unexpected error: {str(e)}"}
 
 def main():
     parser = argparse.ArgumentParser(description="Get the price of a token using Recall API")
