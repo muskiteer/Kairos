@@ -1,196 +1,98 @@
-#!/usr/bin/env python3
-"""
-CoinPanic API Integration for Cryptocurrency News
-Enhanced with dynamic API key support from user profiles
-"""
-
-import requests
-import os
-from dotenv import load_dotenv
+import feedparser
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Optional, List, Dict, Any
 
-# Load environment variables
-load_dotenv()
 
 class CoinPanicAPI:
-    """CoinPanic API client for crypto news with dynamic API key support"""
-    
+    """RSS-based crypto news fetcher (simulating CoinPanic behavior)"""
+
     def __init__(self, api_key: Optional[str] = None):
-        """
-        Initialize CoinPanic API client
-        
-        Args:
-            api_key: Optional API key. If not provided, falls back to environment variable
-        """
-        self.base_url = "https://cryptopanic.com/api/v1"
-        self.api_key = api_key or os.getenv("COINPANIC_API_KEY")
-        
-    def set_api_key(self, api_key: str):
-        """Set API key dynamically"""
-        self.api_key = api_key
-        
-    def get_crypto_news(self, currencies=None, limit=5, kind="news", filter_type="hot"):
-        """
-        Get cryptocurrency news from CoinPanic (optimized for speed)
-        
-        Args:
-            currencies: List of currency codes (e.g., ['BTC', 'ETH']) or None for all
-            limit: Number of news items to return (default 5 for speed)
-            kind: Type of posts ('news', 'media', 'all')
-            filter_type: Filter type ('hot', 'new', 'bullish', 'bearish', 'important')
-        """
+        self.rss_feeds = [
+            "https://www.coindesk.com/arc/outboundfeeds/rss/",
+            "https://cointelegraph.com/rss",
+            "https://cryptoslate.com/feed/"
+        ]
+
+    def get_crypto_news(self, currencies=None, limit=50, kind="news", filter_type="hot"):
         try:
-            # Optimize parameters for faster response
-            params = {
-                'auth_token': self.api_key,
-                'limit': min(limit, 20),  # Reduced max limit for speed
-                'kind': kind,
-                'filter': filter_type
+            return {
+                "news": self._fetch_rss_news(limit=limit),
+                "count": limit
             }
-            
-            if currencies:
-                params['currencies'] = ','.join(currencies)
-            
-            # Set timeout for faster response
-            response = requests.get(f"{self.base_url}/posts/", params=params, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if 'results' in data:
-                return self._format_news_data(data['results'])
-            else:
-                return {"error": "No news data found"}
-                
-        except requests.RequestException as e:
-            return {"error": f"API request failed: {str(e)}"}
         except Exception as e:
-            return {"error": f"Failed to get news: {str(e)}"}
-    
+            return {"error": f"Failed to fetch RSS news: {str(e)}"}
+
     def get_trending_news(self, limit=3):
-        """Get trending cryptocurrency news (fast)"""
-        return self.get_crypto_news(limit=limit, filter_type="hot")
-    
+        return self.get_crypto_news(limit=limit)
+
     def get_currency_news(self, currency, limit=5):
-        """Get news for a specific currency (fast)"""
-        return self.get_crypto_news(currencies=[currency.upper()], limit=limit)
-    
+        return self.get_crypto_news(limit=limit)  # RSS feeds don't filter by currency
+
     def get_bullish_news(self, limit=5):
-        """Get bullish cryptocurrency news (fast)"""
-        return self.get_crypto_news(limit=limit, filter_type="bullish")
-    
+        return self.get_crypto_news(limit=limit)  # Simulated, no actual sentiment
+
     def get_bearish_news(self, limit=5):
-        """Get bearish cryptocurrency news (fast)"""
-        return self.get_crypto_news(limit=limit, filter_type="bearish")
-    
-    def _format_news_data(self, news_items):
-        """Format news data for display (optimized)"""
-        formatted_news = []
-        
-        for item in news_items:
-            try:
-                # Extract only essential information for speed
-                news_item = {
-                    'title': item.get('title', 'No title'),
-                    'url': item.get('url', ''),
-                    'published_at': item.get('published_at', ''),
-                    'source': item.get('source', {}).get('title', 'Unknown'),
-                    'currencies': [c.get('code', '') for c in item.get('currencies', [])],
-                    'votes': {
-                        'positive': item.get('votes', {}).get('positive', 0),
-                        'negative': item.get('votes', {}).get('negative', 0)
-                    }
-                }
-                
-                formatted_news.append(news_item)
-                
-            except Exception as e:
-                # Skip malformed items
-                continue
-        
-        return {
-            'news': formatted_news,
-            'count': len(formatted_news)
-        }
-    
-    def format_news_for_display(self, news_data, show_summary=False):
-        """Format news data for human-readable display (fast mode)"""
-        if 'error' in news_data:
-            return f"❌ Error getting news: {news_data['error']}"
-        
-        if not news_data.get('news'):
-            return "📰 No news found"
-        
-        display = "\n📰 Crypto News:\n"
-        
-        for i, item in enumerate(news_data['news'], 1):
-            display += f"{i}. {item['title']}\n"
-            
-            # Add currencies if available
-            if item['currencies']:
-                display += f"   🪙 {', '.join(item['currencies'])}"
-            
-            # Add sentiment quickly
-            votes = item['votes']
-            if votes['positive'] > 0 or votes['negative'] > 0:
-                display += f" | 📊 +{votes['positive']}/-{votes['negative']}"
-            
-            display += "\n"
-        
-        return display
+        return self.get_crypto_news(limit=limit)  # Simulated, no actual sentiment
 
-# Create global instance
-coinpanic_api = CoinPanicAPI()
+    def _fetch_rss_news(self, limit=50):
+        seen_titles = set()
+        news_items = []
 
-# Helper function to get user-specific CoinPanic API instance
-async def get_user_coinpanic_api(user_id: str = "default") -> CoinPanicAPI:
-    """Get CoinPanic API instance with user-specific API key"""
-    try:
-        from utils.api_manager import api_manager
-        api_keys = await api_manager.get_user_api_keys(user_id)
-        coinpanic_key = api_keys.get("coinpanic_api_key")
-        
-        if coinpanic_key:
-            return CoinPanicAPI(api_key=coinpanic_key)
-        else:
-            # Fall back to global instance with env variables
-            return coinpanic_api
-    except Exception as e:
-        print(f"⚠️ Error getting user CoinPanic API: {e}")
-        return coinpanic_api
+        for url in self.rss_feeds:
+            feed = feedparser.parse(url)
+            feed_items = 0  # Track per feed
 
-# Convenience functions (optimized with dynamic API key support)
-def get_crypto_news(currencies=None, limit=5, user_id: str = "default"):
-    """Get cryptocurrency news (fast) with optional user-specific API key"""
-    # For backward compatibility, use global instance if user_id is default
-    if user_id == "default":
-        return coinpanic_api.get_crypto_news(currencies=currencies, limit=limit)
-    
-    # For user-specific calls, this would need to be called from an async context
-    # For now, fall back to global instance
-    return coinpanic_api.get_crypto_news(currencies=currencies, limit=limit)
+            for entry in feed.entries:
+                if feed_items >= limit:
+                    break
+                title = entry.get('title', 'No title')
+                if title not in seen_titles:
+                    seen_titles.add(title)
+                    news_items.append({
+                        'title': title,
+                        'url': entry.get('link', ''),
+                        'published_at': entry.get('published', ''),
+                        'source': feed.feed.get('title', 'Unknown'),
+                        'currencies': [],
+                        'votes': {'positive': 0, 'negative': 0}
+                    })
+                    feed_items += 1
 
-def get_trending_news(limit=3, user_id: str = "default"):
-    """Get trending crypto news (fast)"""
-    if user_id == "default":
-        return coinpanic_api.get_trending_news(limit=limit)
-    return coinpanic_api.get_trending_news(limit=limit)
+        # Sort news by latest
+        news_items.sort(key=lambda x: x['published_at'], reverse=True)
+        return news_items
 
-def get_currency_news(currency, limit=5, user_id: str = "default"):
-    """Get news for specific currency (fast)"""
-    if user_id == "default":
-        return coinpanic_api.get_currency_news(currency, limit=limit)
-    return coinpanic_api.get_currency_news(currency, limit=limit)
 
-def get_bullish_news(limit=5, user_id: str = "default"):
-    """Get bullish crypto news (fast)"""
-    if user_id == "default":
-        return coinpanic_api.get_bullish_news(limit=limit)
-    return coinpanic_api.get_bullish_news(limit=limit)
+# 🔓 Top-level helper functions for external imports
 
-def get_bearish_news(limit=5, user_id: str = "default"):
-    """Get bearish crypto news (fast)"""
-    if user_id == "default":
-        return coinpanic_api.get_bearish_news(limit=limit)
-    return coinpanic_api.get_bearish_news(limit=limit)
+_coinpanic_instance = CoinPanicAPI()
+
+def get_crypto_news(currencies=None, limit=50, kind="news", filter_type="hot"):
+    return _coinpanic_instance.get_crypto_news(currencies, limit, kind, filter_type)
+
+def get_trending_news(limit=3):
+    return _coinpanic_instance.get_trending_news(limit)
+
+def get_currency_news(currency, limit=5):
+    return _coinpanic_instance.get_currency_news(currency, limit)
+
+def get_bullish_news(limit=5):
+    return _coinpanic_instance.get_bullish_news(limit)
+
+def get_bearish_news(limit=5):
+    return _coinpanic_instance.get_bearish_news(limit)
+
+
+# ✅ Main block for standalone execution
+if __name__ == "__main__":
+    print("📰 Latest Crypto News:\n")
+    result = get_crypto_news(limit=10)
+    if "news" in result:
+        for i, item in enumerate(result["news"], start=1):
+            print(f"{i}. {item['title']}")
+            print(f"   📅 {item['published_at']}")
+            print(f"   🔗 {item['url']}")
+            print(f"   📰 Source: {item['source']}")
+            print("-" * 60)
+    else:
+        print("❌ Error:", result.get("error"))

@@ -11,16 +11,22 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 import google.generativeai as genai
 from datetime import datetime
+from agent.coinpanic_api import CoinPanicAPI
 import uuid
 
 # Import existing modules
 from database.supabase_client import supabase_client
-from agent.vincent_agent import vincent_agent
+# from agent.vincent_agent import vincent_agent
 from agent.coinpanic_api import get_crypto_news, get_trending_news
 from api.portfolio import get_portfolio
 from api.token_balance import get_token_balance
 from api.token_price import get_token_price_json
 from api.execute import trade_exec, token_addresses
+
+
+
+coinpanic = CoinPanicAPI()
+news = coinpanic.get_crypto_news()
 
 class KairosTradingCopilot:
     """Advanced AI Trading Copilot with conversational interface and learning capabilities"""
@@ -412,121 +418,115 @@ Start autonomous trading with:
         # Execute trade with all parameters available
         return await self._execute_trade_with_reasoning(params)
     
-    async def _execute_trade_with_reasoning(self, trade_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute trade with comprehensive analysis and reasoning"""
+    # async def _execute_trade_with_reasoning(self, trade_params: Dict[str, Any]) -> Dict[str, Any]:
+    #     """Execute trade with comprehensive analysis and reasoning"""
         
-        # Step 1: Get current market data
-        try:
-            portfolio_data = get_portfolio(user_id=self.user_id)
-            token_price = get_token_price_json(trade_params["token_to"])
-            market_news_response = get_trending_news()
-            market_news = market_news_response.get("news", []) if isinstance(market_news_response, dict) else []
-        except Exception as e:
-            return {
-                "response": f"❌ Error gathering market data: {str(e)}",
-                "success": False
-            }
+    #     # Step 1: Get current market data
+    #     try:
+    #         portfolio_data = get_portfolio(user_id=self.user_id)
+    #         token_price = get_token_price_json(trade_params["token_to"])
+    #         market_news_response = get_trending_news()
+    #         market_news = market_news_response.get("news", []) if isinstance(market_news_response, dict) else []
+    #     except Exception as e:
+    #         return {
+    #             "response": f"❌ Error gathering market data: {str(e)}",
+    #             "success": False
+    #         }
         
-        # Step 2: Basic risk check (using Vincent stub)
-        risk_check = await vincent_agent.check_trade_policy({
-            "trade_type": "swap",
-            "from_token": trade_params["token_from"],
-            "to_token": trade_params["token_to"],
-            "amount": trade_params["amount"],
-            "market_conditions": {"news": market_news[:3] if market_news else []}  # Recent news
-        })
+    #     # Step 2: Basic risk check (using Vincent stub)
+       
         
-        # Step 3: Generate AI reasoning
-        reasoning_prompt = f"""
-        As Kairos, an expert trading AI, analyze this trade request:
+    #     # Step 3: Generate AI reasoning
+    #     reasoning_prompt = f"""
+    #     As Kairos, an expert trading AI, analyze this trade request:
         
-        Trade Details:
-        - From: {trade_params['token_from']}
-        - To: {trade_params['token_to']}
-        - Amount: {trade_params['amount']}
+    #     Trade Details:
+    #     - From: {trade_params['token_from']}
+    #     - To: {trade_params['token_to']}
+    #     - Amount: {trade_params['amount']}
         
-        Market Context:
-        - Current price: {token_price}
-        - Portfolio: {json.dumps(portfolio_data, indent=2)}
-        - Recent news: {market_news[:3]}
-        - Risk assessment: {risk_check}
+    #     Market Context:
+    #     - Current price: {token_price}
+    #     - Portfolio: {json.dumps(portfolio_data, indent=2)}
+    #     - Recent news: {market_news[:3]}
         
-        Provide detailed reasoning for this trade including:
-        1. Market analysis
-        2. Risk assessment
-        3. Strategic rationale
-        4. Expected outcome
-        5. Recommendation (execute/modify/wait)
-        """
         
-        try:
-            reasoning_response = await self.model.generate_content_async(reasoning_prompt)
-            ai_reasoning = reasoning_response.text
-        except Exception as e:
-            ai_reasoning = f"Reasoning analysis unavailable: {str(e)}"
+    #     Provide detailed reasoning for this trade including:
+    #     1. Market analysis
+    #     2. Risk assessment
+    #     3. Strategic rationale
+    #     4. Expected outcome
+    #     5. Recommendation (execute/modify/wait)
+    #     """
         
-        # Step 4: Execute trade if approved
-        if risk_check.get("approved", False):
-            try:
-                # Convert token symbols to addresses
-                from_address = token_addresses.get(trade_params["token_from"].upper())
-                to_address = token_addresses.get(trade_params["token_to"].upper())
+    #     try:
+    #         reasoning_response = await self.model.generate_content_async(reasoning_prompt)
+    #         ai_reasoning = reasoning_response.text
+    #     except Exception as e:
+    #         ai_reasoning = f"Reasoning analysis unavailable: {str(e)}"
+        
+    #     # Step 4: Execute trade if approved
+    #     if risk_check.get("approved", False):
+    #         try:
+    #             # Convert token symbols to addresses
+    #             from_address = token_addresses.get(trade_params["token_from"].upper())
+    #             to_address = token_addresses.get(trade_params["token_to"].upper())
                 
-                if not from_address or not to_address:
-                    return {
-                        "response": f"❌ Unsupported token. Available tokens: {list(token_addresses.keys())}",
-                        "success": False,
-                        "reasoning": ai_reasoning
-                    }
+    #             if not from_address or not to_address:
+    #                 return {
+    #                     "response": f"❌ Unsupported token. Available tokens: {list(token_addresses.keys())}",
+    #                     "success": False,
+    #                     "reasoning": ai_reasoning
+    #                 }
                 
-                # Execute the trade
-                trade_result = trade_exec(from_address, to_address, float(trade_params["amount"]))
+    #             # Execute the trade
+    #             trade_result = trade_exec(from_address, to_address, float(trade_params["amount"]))
                 
-                # Log trade to database
-                if self.current_session:
-                    try:
-                        await supabase_client.log_trade(
-                            self.current_session,
-                            {
-                                "trade_type": "swap",
-                                "from_token": trade_params["token_from"],
-                                "to_token": trade_params["token_to"],
-                                "amount": trade_params["amount"],
-                                "success": trade_result.get("success", False),
-                                "market_conditions": {"news": market_news[:3] if market_news else []}
-                            },
-                            ai_reasoning
-                        )
-                    except Exception as e:
-                        print(f"Trade logging error: {e}")
+    #             # Log trade to database
+    #             if self.current_session:
+    #                 try:
+    #                     await supabase_client.log_trade(
+    #                         self.current_session,
+    #                         {
+    #                             "trade_type": "swap",
+    #                             "from_token": trade_params["token_from"],
+    #                             "to_token": trade_params["token_to"],
+    #                             "amount": trade_params["amount"],
+    #                             "success": trade_result.get("success", False),
+    #                             "market_conditions": {"news": market_news[:3] if market_news else []}
+    #                         },
+    #                         ai_reasoning
+    #                     )
+    #                 except Exception as e:
+    #                     print(f"Trade logging error: {e}")
                 
-                return {
-                    "intent": "trade_executed",
-                    "response": f"✅ Trade executed successfully!\n\n📊 **Trade Details:**\n- Swapped {trade_params['amount']} {trade_params['token_from']} → {trade_params['token_to']}\n- Status: {trade_result.get('status', 'Completed')}\n\n🧠 **AI Reasoning:**\n{ai_reasoning}",
-                    "data": trade_result,
-                    "reasoning": ai_reasoning,
-                    "success": True,
-                    "actions_taken": ["trade_execution", "policy_check", "market_analysis"]
-                }
+    #             return {
+    #                 "intent": "trade_executed",
+    #                 "response": f"✅ Trade executed successfully!\n\n📊 **Trade Details:**\n- Swapped {trade_params['amount']} {trade_params['token_from']} → {trade_params['token_to']}\n- Status: {trade_result.get('status', 'Completed')}\n\n🧠 **AI Reasoning:**\n{ai_reasoning}",
+    #                 "data": trade_result,
+    #                 "reasoning": ai_reasoning,
+    #                 "success": True,
+    #                 "actions_taken": ["trade_execution", "policy_check", "market_analysis"]
+    #             }
                 
-            except Exception as e:
-                return {
-                    "intent": "trade_error",
-                    "response": f"❌ Trade execution failed: {str(e)}",
-                    "data": {"error": str(e)},
-                    "reasoning": ai_reasoning,
-                    "success": False,
-                    "actions_taken": ["error_handling"]
-                }
-        else:
-            return {
-                "intent": "trade_blocked",
-                "response": f"⚠️ Trade not approved by risk assessment.\n\n**Reason:** {risk_check.get('reason', 'Policy violation')}\n**Risk Score:** {risk_check.get('risk_score', 'Unknown')}\n\n🧠 **AI Analysis:**\n{ai_reasoning}",
-                "data": risk_check,
-                "reasoning": ai_reasoning,
-                "success": False,
-                "suggestions": risk_check.get("recommendations", [])
-            }
+    #         except Exception as e:
+    #             return {
+    #                 "intent": "trade_error",
+    #                 "response": f"❌ Trade execution failed: {str(e)}",
+    #                 "data": {"error": str(e)},
+    #                 "reasoning": ai_reasoning,
+    #                 "success": False,
+    #                 "actions_taken": ["error_handling"]
+    #             }
+    #     else:
+    #         return {
+    #             "intent": "trade_blocked",
+    #             "response": f"⚠️ Trade not approved by risk assessment.\n\n**Reason:** {risk_check.get('reason', 'Policy violation')}\n**Risk Score:** {risk_check.get('risk_score', 'Unknown')}\n\n🧠 **AI Analysis:**\n{ai_reasoning}",
+    #             "data": risk_check,
+    #             "reasoning": ai_reasoning,
+    #             "success": False,
+    #             "suggestions": risk_check.get("recommendations", [])
+    #         }
     
     async def _handle_portfolio_inquiry(self, message: str) -> Dict[str, Any]:
         """Handle portfolio and price queries"""

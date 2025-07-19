@@ -22,7 +22,7 @@ from api.token_balance import get_token_balance
 from api.execute import trade_exec, token_addresses
 from api.trades_history import get_portfolio as get_trades_history
 from agent.coinpanic_api import get_trending_news
-from agent.vincent_agent import vincent_agent
+# from agent.vincent_agent import vincent_agent
 from database.supabase_client import supabase_client
 
 load_dotenv()
@@ -2269,24 +2269,7 @@ class KairosAutonomousAgent:
         except Exception as e:
             print(f"⚠️ Error in delayed trade evaluation: {e}")
     
-    async def _generate_session_pdf_report(self, session_id: str) -> str:
-        """Generate comprehensive PDF report for trading session"""
-        try:
-            from utils.report_generator import ReportGenerator
-            
-            session = self.autonomous_sessions.get(session_id)
-            if not session:
-                return None
-            
-            # Generate report
-            report_generator = ReportGenerator()
-            pdf_path = await report_generator.generate_autonomous_session_report(session)
-            
-            return pdf_path
-            
-        except Exception as e:
-            print(f"⚠️ Could not generate PDF report: {e}")
-            return None
+   
 
 # Create global instance
 kairos_autonomous_agent = KairosAutonomousAgent()
