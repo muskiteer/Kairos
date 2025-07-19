@@ -383,40 +383,259 @@ class KairosAutonomousAgent:
         print(f"🏁 Autonomous trading session {session_id} completed after {cycle_count} cycles")
     
     async def _autonomous_decision_cycle(self, session_id: str) -> Dict[str, Any]:
-        """Single autonomous decision-making cycle"""
+        """
+        🔄 CORE KAIROS AI AUTONOMOUS DECISION CYCLE 🔄
+        Implements the full Perceive -> Reason -> Decide -> Act -> Learn workflow
+        """
         
         session = self.autonomous_sessions[session_id]
+        user_id = session["user_id"]
         
-        # 1. Gather market intelligence
-        market_data = await self._gather_market_intelligence()
+        print(f"🔄 Starting Kairos AI decision cycle for session {session_id[:8]}...")
         
-        # 2. Analyze portfolio
-        portfolio_analysis = await self._analyze_current_portfolio(session["user_id"])
+        # === STEP 1: PERCEIVE - Gather All Intelligence ===
+        print("🔍 Step 1: Gathering market intelligence and portfolio state...")
         
-        # 3. Make trading decision using AI
-        trading_decision = await self._make_autonomous_trading_decision(
-            market_data, 
-            portfolio_analysis, 
-            {**session["params"], "session_id": session_id}
-        )
+        # Get current portfolio data
+        portfolio_data = get_portfolio(user_id=user_id)
         
-        # 4. Execute trade if decision is to trade
+        # Get real-time market prices for major tokens
+        market_prices = {}
+        for token in ["ETH", "SOL", "WBTC", "USDC"]:
+            try:
+                price_data = get_token_price_json(token)
+                market_prices[token] = price_data.get("price", 0) if price_data else 0
+            except Exception as e:
+                print(f"⚠️ Warning: Could not get {token} price: {e}")
+                market_prices[token] = 0
+        
+        # Get latest crypto news and sentiment
+        try:
+            news_data = get_trending_news(limit=5)
+            if not news_data:
+                news_data = [{"title": "No recent news available", "sentiment": 0.0}]
+        except Exception as e:
+            print(f"⚠️ Warning: Could not get news data: {e}")
+            news_data = [{"title": "News unavailable", "sentiment": 0.0}]
+        
+        # Get historical strategy performance from database
+        try:
+            from database.supabase_client import supabase_client
+            strategy_performance = supabase_client.get_strategies_for_session(session_id) or []
+        except Exception as e:
+            print(f"⚠️ Warning: Could not get strategy performance: {e}")
+            strategy_performance = []
+        
+        # === STEP 2 & 3: REASON & DECIDE - Query Kairos AI (Gemini) ===
+        print("🧠 Step 2/3: Querying Kairos AI for intelligent decision...")
+        
+        try:
+            # Get the Gemini agent from the copilot
+            copilot = self._get_copilot()
+            if hasattr(copilot, 'gemini_agent') and copilot.gemini_agent:
+                gemini_agent = copilot.gemini_agent
+                
+                # Prepare data structures for AI analysis
+                portfolio_state = {
+                    "balances": portfolio_data,
+                    "risk_tolerance": session.get("risk_tolerance", "moderate"),
+                    "total_value": sum(float(v.get("usd_value", 0)) for v in portfolio_data.values() if isinstance(v, dict))
+                }
+                
+                market_data_structured = {
+                    "prices": market_prices,
+                    "news": news_data
+                }
+                
+                # Call the AI decision engine
+                ai_decision = gemini_agent.get_intelligent_analysis(
+                    portfolio_state,
+                    market_data_structured,
+                    news_data,
+                    strategy_performance
+                )
+                
+                print(f"✅ AI Decision received: {ai_decision.get('strategy_chosen', {}).get('name', 'Unknown')}")
+                
+            else:
+                print("⚠️ Gemini agent not available, using intelligent fallback decision")
+                
+                # Calculate portfolio value and USDC balance for fallback decisions
+                portfolio_value = 0
+                usdc_total = 0
+                eth_balance = 0
+                
+                if isinstance(portfolio_data, dict) and "balances" in portfolio_data:
+                    balances = portfolio_data["balances"]
+                elif isinstance(portfolio_data, list):
+                    balances = portfolio_data
+                else:
+                    balances = []
+                
+                for balance in balances:
+                    symbol = balance.get("symbol", "").upper()
+                    amount = float(balance.get("amount", 0))
+                    
+                    if symbol in ["USDC", "USDT", "DAI", "USDBC"]:
+                        usdc_total += amount
+                    elif symbol == "ETH":
+                        eth_balance = amount
+                        if "ETH" in market_prices and market_prices["ETH"] > 0:
+                            portfolio_value += amount * market_prices["ETH"]
+                    
+                    if symbol in ["USDC", "USDT", "DAI", "USDBC"]:
+                        portfolio_value += amount
+                
+                # INTELLIGENT FALLBACK DECISION - PREFER TRADING OVER HODL
+                if usdc_total >= 100:  # If we have enough USDC
+                    trade_amount = min(200, usdc_total * 0.1)  # 10% of USDC, max $200
+                    ai_decision = {
+                        "should_trade": True,
+                        "confidence_score": 0.65,
+                        "strategy_chosen": {"name": "fallback_dca_buy", "type": "accumulation"},
+                        "reasoning": [
+                            "Gemini AI not available - using intelligent fallback",
+                            f"Portfolio has ${usdc_total:,.0f} USDC available",
+                            f"Executing DCA buy of ${trade_amount:.0f} ETH for learning",
+                            "ETH accumulation is historically profitable"
+                        ],
+                        "trade_params": {
+                            "from_token": "USDC",
+                            "to_token": "ETH",
+                            "amount_usd": trade_amount,
+                            "strategy_type": "fallback_dca"
+                        },
+                        "risk_assessment": {"level": "moderate", "mitigation": "Small trade size for learning"}
+                    }
+                elif eth_balance >= 0.01:  # If we have ETH but low USDC
+                    sell_amount = min(eth_balance * 0.2, 0.05)  # Sell 20% of ETH, max 0.05 ETH
+                    ai_decision = {
+                        "should_trade": True,
+                        "confidence_score": 0.6,
+                        "strategy_chosen": {"name": "fallback_profit_take", "type": "rebalancing"},
+                        "reasoning": [
+                            "Gemini AI not available - using intelligent fallback",
+                            f"Portfolio has {eth_balance:.4f} ETH, low USDC",
+                            f"Taking partial profit: {sell_amount:.4f} ETH",
+                            "Rebalancing for future opportunities"
+                        ],
+                        "trade_params": {
+                            "from_token": "ETH",
+                            "to_token": "USDC",
+                            "amount": sell_amount,
+                            "strategy_type": "fallback_rebalance"
+                        },
+                        "risk_assessment": {"level": "low", "mitigation": "Small rebalancing trade"}
+                    }
+                else:
+                    # Last resort - very small learning trade
+                    ai_decision = {
+                        "should_trade": True,
+                        "confidence_score": 0.4,
+                        "strategy_chosen": {"name": "fallback_micro_learning", "type": "learning"},
+                        "reasoning": [
+                            "Gemini AI not available - using micro learning trade",
+                            "Insufficient balance for normal trades",
+                            "Executing minimum viable learning trade",
+                            "Building strategy database for future AI decisions"
+                        ],
+                        "trade_params": {
+                            "from_token": "USDC",
+                            "to_token": "ETH",
+                            "amount_usd": min(10, usdc_total * 0.5),
+                            "strategy_type": "fallback_micro"
+                        },
+                        "risk_assessment": {"level": "low", "mitigation": "Micro trade for learning only"}
+                    }
+                
+        except Exception as e:
+            print(f"❌ Error in AI decision making: {e}")
+            ai_decision = {
+                "should_trade": False,
+                "confidence_score": 0.0,
+                "strategy_chosen": {"name": "decision_error", "type": "fallback"},
+                "reasoning": [f"Error during AI analysis: {str(e)}", "Defaulting to HODL for safety"],
+                "trade_params": None,
+                "risk_assessment": {"level": "high", "mitigation": "Decision error - no trade executed"}
+            }
+        
+        # === STEP 4: ACT - Execute Trade if Decided ===
         execution_result = None
-        if trading_decision.get("should_trade", False):
-            execution_result = await self._execute_autonomous_trade(
-                trading_decision["trade_params"],
-                session_id
-            )
+        if ai_decision.get("should_trade", False):
+            print("🎯 Step 4: Executing trade based on AI decision...")
+            
+            trade_params = ai_decision.get("trade_params", {})
+            if trade_params:
+                # Convert USD amount to token amount if needed
+                from_token = trade_params.get("from_token")
+                to_token = trade_params.get("to_token")
+                amount_usd = trade_params.get("amount_usd", 0)
+                
+                # Calculate token amount from USD amount
+                if from_token in market_prices and market_prices[from_token] > 0:
+                    from_amount = amount_usd / market_prices[from_token]
+                    trade_params["from_amount"] = from_amount
+                    trade_params["amount"] = from_amount  # For compatibility
+                    
+                    execution_result = await self._execute_autonomous_trade(trade_params, session_id)
+                else:
+                    print(f"❌ Cannot calculate amount - {from_token} price unavailable")
+                    execution_result = {"success": False, "error": f"Price unavailable for {from_token}"}
+            else:
+                print("❌ No trade parameters provided by AI")
+                execution_result = {"success": False, "error": "No trade parameters from AI"}
+        else:
+            print("🤖 AI decided to HODL - No trade executed")
         
-        # 5. Learn from the decision (enhanced with strategy tracking) - PASS SESSION_ID
-        await self._learn_from_decision(trading_decision, execution_result, market_data, session_id)
+        # === STEP 5: LEARN - Log AI Reasoning and Update Strategy Performance ===
+        print("📚 Step 5: Learning from decision and updating knowledge base...")
+        
+        try:
+            # Log the AI's complete decision and reasoning to database
+            from database.supabase_client import supabase_client
+            
+            conversation_data = {
+                "session_id": session_id,
+                "message_order": self.message_order_counter.get(session_id, 1),
+                "role": "assistant",
+                "content": f"Decision: {ai_decision.get('strategy_chosen', {}).get('name', 'Unknown')}",
+                "reasoning": "\n".join(ai_decision.get("reasoning", [])),
+                "metadata": ai_decision
+            }
+            
+            supabase_client.insert_ai_conversation(conversation_data)
+            self.message_order_counter[session_id] = self.message_order_counter.get(session_id, 1) + 1
+            
+            # If we executed a trade, store strategy usage
+            if ai_decision.get("should_trade", False) and execution_result:
+                strategy_name = ai_decision.get('strategy_chosen', {}).get('name', 'unknown_strategy')
+                
+                # Upsert strategy (create if doesn't exist)
+                strategy_id = supabase_client.upsert_strategy(session_id, strategy_name)
+                
+                # Store the strategy_id in session for later performance evaluation
+                if not hasattr(session, 'pending_evaluations'):
+                    session['pending_evaluations'] = []
+                session['pending_evaluations'].append({
+                    "strategy_id": strategy_id,
+                    "trade_time": datetime.now().isoformat(),
+                    "trade_params": trade_params,
+                    "execution_result": execution_result
+                })
+            
+        except Exception as e:
+            print(f"❌ Error in learning phase: {e}")
+        
+        # Schedule performance evaluation for 15 minutes later
+        if execution_result and execution_result.get("success"):
+            asyncio.create_task(self._evaluate_trade_outcome_later(session_id, ai_decision, execution_result, 900))  # 15 minutes
         
         return {
-            "market_data": market_data,
-            "portfolio_analysis": portfolio_analysis,
-            "trading_decision": trading_decision,
+            "market_data": {"prices": market_prices, "news": news_data},
+            "portfolio_analysis": portfolio_data,
+            "trading_decision": ai_decision,
             "execution_result": execution_result,
-            "next_cycle_wait": trading_decision.get("next_cycle_wait", 300)
+            "next_cycle_wait": 300  # 5 minutes between cycles
         }
     
     async def _gather_market_intelligence(self) -> Dict[str, Any]:
@@ -872,6 +1091,23 @@ class KairosAutonomousAgent:
             to_token = trade_params["to_token"]
             amount = trade_params["amount"]
             
+            # Calculate expected to_amount using CoinGecko prices
+            expected_to_amount = 0
+            try:
+                from_price_data = get_token_price_json(from_token)
+                to_price_data = get_token_price_json(to_token)
+                
+                from_price = from_price_data.get("price", 0)
+                to_price = to_price_data.get("price", 0)
+                
+                if from_price > 0 and to_price > 0:
+                    # Calculate expected amount with 2% slippage
+                    expected_to_amount = (amount * from_price / to_price) * 0.98
+                    print(f"📊 Expected trade: {amount:.6f} {from_token} → {expected_to_amount:.6f} {to_token}")
+                    print(f"💰 Prices: {from_token}=${from_price:.2f}, {to_token}=${to_price:.2f}")
+            except Exception as e:
+                print(f"⚠️ Could not calculate expected amount: {e}")
+            
             # Get pre-trade portfolio value for accurate P&L calculation
             pre_trade_portfolio_value = self._get_current_portfolio_value(session["user_id"])
             
@@ -890,20 +1126,24 @@ class KairosAutonomousAgent:
             from_address = token_addresses.get(from_token.upper())
             to_address = token_addresses.get(to_token.upper())
             
-            print(f"🔄 Executing trade: ${amount:.2f} {from_token} → {to_token}")
+            print(f"🔄 Executing trade: {amount:.6f} {from_token} → {to_token}")
             trade_result = trade_exec(from_address, to_address, amount)
             
             # Get post-trade portfolio value
             post_trade_portfolio_value = self._get_current_portfolio_value(session["user_id"])
             
             if trade_result and "error" not in trade_result:
+                # Use expected amount if trade_result doesn't provide to_amount
+                actual_to_amount = trade_result.get("to_amount", expected_to_amount)
+                
                 # Prepare enhanced trade data for database
                 enhanced_trade_data = {
                     "trade_type": "swap",
                     "from_token": from_token,
                     "to_token": to_token,
                     "amount": amount,
-                    "to_amount": trade_result.get("to_amount", 0),
+                    "to_amount": actual_to_amount,
+                    "expected_amount": expected_to_amount,
                     "price": trade_result.get("price", 0),
                     "success": True,
                     "confidence": trade_params.get("confidence", 0.5),
@@ -1174,6 +1414,94 @@ class KairosAutonomousAgent:
         # If execution was successful, we'll get the outcome evaluation later
         if execution and execution.get("success"):
             print(f"📊 Trade evaluation scheduled for 5 minutes to assess outcome")
+
+    async def _evaluate_trade_outcome_later(self, session_id: str, ai_decision: Dict, execution_result: Dict, delay_seconds: int):
+        """
+        🕒 Evaluate trade outcome after a delay and update strategy performance
+        This is the key learning mechanism that makes the AI smarter over time
+        """
+        try:
+            # Wait for the specified delay
+            await asyncio.sleep(delay_seconds)
+            
+            print(f"⏰ Evaluating trade outcome after {delay_seconds//60} minutes...")
+            
+            # Get the session data
+            session = self.autonomous_sessions.get(session_id)
+            if not session:
+                print(f"⚠️ Session {session_id} no longer active, skipping evaluation")
+                return
+            
+            # Check if we have pending evaluations for this session
+            pending_evaluations = session.get('pending_evaluations', [])
+            if not pending_evaluations:
+                print("⚠️ No pending evaluations found")
+                return
+            
+            # Process the most recent evaluation
+            latest_eval = pending_evaluations[-1]
+            strategy_id = latest_eval.get('strategy_id')
+            trade_params = latest_eval.get('trade_params', {})
+            original_execution = latest_eval.get('execution_result', {})
+            
+            if not strategy_id:
+                print("⚠️ No strategy ID found for evaluation")
+                return
+            
+            # Determine if the trade was successful based on price movement
+            from_token = trade_params.get('from_token')
+            to_token = trade_params.get('to_token')
+            trade_type = trade_params.get('trade_type', 'buy')
+            
+            success = False
+            pnl = 0.0
+            
+            try:
+                # Get current prices
+                current_from_price = get_token_price_json(from_token).get('price', 0) if from_token else 0
+                current_to_price = get_token_price_json(to_token).get('price', 0) if to_token else 0
+                
+                # Simple evaluation: if we bought an asset, did its price go up?
+                if trade_type == 'buy' and to_token and current_to_price > 0:
+                    # For buy trades, success if the bought token price increased
+                    original_to_price = trade_params.get('expected_to_price', current_to_price)
+                    price_change = (current_to_price - original_to_price) / original_to_price if original_to_price > 0 else 0
+                    success = price_change > 0.01  # At least 1% gain
+                    pnl = price_change * trade_params.get('amount_usd', 0)
+                    
+                elif trade_type == 'sell' and from_token and current_from_price > 0:
+                    # For sell trades, success if the sold token price decreased
+                    original_from_price = trade_params.get('expected_from_price', current_from_price)
+                    price_change = (original_from_price - current_from_price) / original_from_price if original_from_price > 0 else 0
+                    success = price_change > 0.01  # At least 1% decline after selling
+                    pnl = price_change * trade_params.get('amount_usd', 0)
+                
+                print(f"📊 Trade Evaluation Results:")
+                print(f"   Strategy: {ai_decision.get('strategy_chosen', {}).get('name')}")
+                print(f"   Success: {'✅ Yes' if success else '❌ No'}")
+                print(f"   P&L: ${pnl:+.4f}")
+                
+            except Exception as price_error:
+                print(f"⚠️ Could not get current prices for evaluation: {price_error}")
+                # Default to neutral evaluation
+                success = False
+                pnl = 0.0
+            
+            # Update strategy performance in database
+            try:
+                from database.supabase_client import supabase_client
+                supabase_client.update_strategy_performance(strategy_id, success, pnl)
+                
+                # Remove this evaluation from pending
+                session['pending_evaluations'].remove(latest_eval)
+                
+                print(f"🧠 Strategy performance updated for {strategy_id}")
+                
+            except Exception as db_error:
+                print(f"❌ Error updating strategy performance: {db_error}")
+                
+        except Exception as e:
+            print(f"❌ Error in trade outcome evaluation: {e}")
 
     async def persist_decision_to_db(self, session_id: str, decision: Dict, execution: Dict, market_data: Dict):
         """Persist agent decision and learning to Supabase"""
@@ -1762,6 +2090,203 @@ class KairosAutonomousAgent:
         except Exception as e:
             print(f"⚠️ Error seeding strategies: {e}")
             return 0
+    
+    def _get_current_portfolio_value(self, user_id: str = "default") -> float:
+        """Calculate current portfolio value in USD"""
+        try:
+            portfolio_data = get_portfolio(user_id=user_id)
+            return self._calculate_real_portfolio_value(portfolio_data)
+        except Exception as e:
+            print(f"⚠️ Error getting portfolio value: {e}")
+            return 0.0
+    
+    def _calculate_real_portfolio_value(self, portfolio_data) -> float:
+        """Calculate the total USD value of portfolio"""
+        if not portfolio_data:
+            return 0.0
+        
+        try:
+            total_value = 0.0
+            
+            # Handle different portfolio data structures
+            if isinstance(portfolio_data, dict):
+                if "balances" in portfolio_data:
+                    balances = portfolio_data["balances"]
+                elif "success" in portfolio_data and portfolio_data["balances"]:
+                    balances = portfolio_data["balances"]
+                else:
+                    return 0.0
+            elif isinstance(portfolio_data, list):
+                balances = portfolio_data
+            else:
+                return 0.0
+            
+            print(f"🔍 DEBUG_CALC: Found {len(balances)} token balances to process")
+            
+            for balance in balances:
+                try:
+                    symbol = balance.get("symbol", "").upper()
+                    amount = float(balance.get("amount", 0))
+                    
+                    if amount <= 0:
+                        continue
+                    
+                    # Handle stablecoins (USDC, USDT, DAI, etc.)
+                    if symbol in ["USDC", "USDT", "DAI", "USDBC"]:
+                        value = amount * 1.0  # $1 per stablecoin
+                        print(f"💰 DEBUG_CALC: {symbol} (Stablecoin): {amount:.6f} × $1.00 = ${value:.2f}")
+                        total_value += value
+                        print(f"📊 DEBUG_CALC: Running total: ${total_value:.2f}")
+                        continue
+                    
+                    # Get price for other tokens
+                    try:
+                        if symbol == "WETH":
+                            symbol = "ETH"  # Use ETH price for WETH
+                        
+                        price_data = get_token_price_json(symbol)
+                        
+                        if price_data and "price" in price_data:
+                            price = float(price_data["price"])
+                            value = amount * price
+                            print(f"💰 DEBUG_CALC: {symbol}: {amount:.6f} × ${price:.2f} = ${value:.2f}")
+                            total_value += value
+                            print(f"📊 DEBUG_CALC: Running total: ${total_value:.2f}")
+                        else:
+                            print(f"⚠ DEBUG_CALC: No price data for {symbol}: {price_data}")
+                    
+                    except Exception as price_error:
+                        print(f"⚠ DEBUG_CALC: Error getting price for {symbol}: {price_error}")
+                        continue
+                
+                except Exception as balance_error:
+                    print(f"⚠ DEBUG_CALC: Error processing balance: {balance_error}")
+                    continue
+            
+            print(f"✅ DEBUG_CALC: Final portfolio value: ${total_value:.2f}")
+            return total_value
+            
+        except Exception as e:
+            print(f"⚠ DEBUG_CALC: Error calculating portfolio value: {e}")
+            return 0.0
+    
+    def _calculate_risk_score(self, market_data: Dict, portfolio_analysis: Dict, decision: Dict) -> float:
+        """Calculate risk score for a trading decision (0.0 = low risk, 1.0 = high risk)"""
+        try:
+            risk_factors = []
+            
+            # Market volatility risk
+            volatility = market_data.get("volatility", "medium")
+            if volatility == "high":
+                risk_factors.append(0.3)
+            elif volatility == "medium":
+                risk_factors.append(0.15)
+            else:
+                risk_factors.append(0.05)
+            
+            # Portfolio concentration risk
+            diversification = portfolio_analysis.get("diversification", "moderate")
+            if diversification == "poor":
+                risk_factors.append(0.25)
+            elif diversification == "moderate":
+                risk_factors.append(0.1)
+            else:
+                risk_factors.append(0.0)
+            
+            # Trade size risk
+            trade_amount = decision.get("trade_params", {}).get("amount", 0)
+            portfolio_value = portfolio_analysis.get("total_value", 1)
+            if portfolio_value > 0:
+                trade_ratio = trade_amount / portfolio_value
+                if trade_ratio > 0.2:  # More than 20% of portfolio
+                    risk_factors.append(0.3)
+                elif trade_ratio > 0.1:  # More than 10% of portfolio
+                    risk_factors.append(0.15)
+                else:
+                    risk_factors.append(0.0)
+            
+            # Confidence risk (inverse relationship)
+            confidence = decision.get("confidence", 0.5)
+            confidence_risk = (1.0 - confidence) * 0.2
+            risk_factors.append(confidence_risk)
+            
+            # Calculate overall risk score
+            total_risk = sum(risk_factors)
+            return min(total_risk, 1.0)  # Cap at 1.0
+            
+        except Exception as e:
+            print(f"⚠️ Error calculating risk score: {e}")
+            return 0.5  # Default medium risk
+    
+    async def persist_decision_to_db(self, session_id: str, decision: Dict, execution: Dict, market_data: Dict):
+        """Persist trading decision to database for learning"""
+        try:
+            # Store decision metadata
+            decision_record = {
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "decision_type": "autonomous_trade",
+                "decision_data": decision,
+                "execution_data": execution,
+                "market_conditions": market_data,
+                "strategy_used": decision.get("strategy_used", "unknown"),
+                "confidence": decision.get("confidence", 0.5),
+                "risk_score": decision.get("risk_assessment", {}).get("risk_score", 0.5)
+            }
+            
+            # This would store in a decisions table if it exists
+            # For now, we rely on the AI conversations table
+            print(f"💾 Decision metadata prepared for session {session_id}")
+            
+        except Exception as e:
+            print(f"⚠️ Error persisting decision: {e}")
+    
+    async def _evaluate_trade_outcome_later(self, session_id: str, ai_decision: Dict, execution_result: Dict, delay_seconds: int):
+        """Schedule trade outcome evaluation after a delay"""
+        try:
+            await asyncio.sleep(delay_seconds)
+            
+            # Get strategy ID from the decision
+            strategy_id = ai_decision.get("strategy_id")
+            if not strategy_id:
+                return
+            
+            # Evaluate if the trade was favorable
+            was_favorable = execution_result.get("success", False)
+            
+            # Simple performance check - if trade succeeded, consider it favorable for now
+            # In a real system, you'd check if the portfolio value improved
+            performance_data = {
+                "execution_success": was_favorable,
+                "evaluated_at": datetime.utcnow().isoformat(),
+                "evaluation_delay": delay_seconds
+            }
+            
+            # Update strategy performance
+            supabase_client.update_strategy_performance(strategy_id, was_favorable, performance_data)
+            print(f"📊 Evaluated strategy {strategy_id}: {'✅ Favorable' if was_favorable else '❌ Unfavorable'}")
+            
+        except Exception as e:
+            print(f"⚠️ Error in delayed trade evaluation: {e}")
+    
+    async def _generate_session_pdf_report(self, session_id: str) -> str:
+        """Generate comprehensive PDF report for trading session"""
+        try:
+            from utils.report_generator import ReportGenerator
+            
+            session = self.autonomous_sessions.get(session_id)
+            if not session:
+                return None
+            
+            # Generate report
+            report_generator = ReportGenerator()
+            pdf_path = await report_generator.generate_autonomous_session_report(session)
+            
+            return pdf_path
+            
+        except Exception as e:
+            print(f"⚠️ Could not generate PDF report: {e}")
+            return None
 
 # Create global instance
 kairos_autonomous_agent = KairosAutonomousAgent()
