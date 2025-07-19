@@ -28,54 +28,144 @@ class SupabaseClient:
         
         self.client: Client = create_client(self.url, self.key)
     
-    # Trading Sessions
-    async def create_trading_session(self, user_id: str = "default") -> str:
-        """Create a new trading session"""
+    # Trading Sessions with Enhanced Metrics
+    def create_trading_session(self, user_id: str = "default", session_name: str = None, initial_portfolio_value: float = 0.0) -> str:
+        """Create a new trading session with proper initialization"""
         session_data = {
             "id": str(uuid.uuid4()),
             "user_id": user_id,
+            "session_name": session_name or f"Auto Session {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
             "start_time": datetime.utcnow().isoformat(),
             "status": "active",
+            "initial_portfolio_value": initial_portfolio_value,
+            "current_portfolio_value": initial_portfolio_value,
             "initial_portfolio": {},
             "final_portfolio": {},
             "total_trades": 0,
-            "total_profit_loss": 0.0
+            "successful_trades": 0,
+            "total_volume": 0.0,
+            "total_profit_loss": 0.0,
+            "total_pnl": 0.0,
+            "ai_confidence_avg": 0.0,
+            "risk_score": "medium",
+            "session_metadata": {
+                "created_by": "autonomous_agent",
+                "version": "2.0",
+                "initial_tokens": {}
+            }
         }
         
         result = self.client.table("trading_sessions").insert(session_data).execute()
         return result.data[0]["id"]
-    
-    async def end_trading_session(self, session_id: str, final_portfolio: dict, total_pnl: float):
-        """End a trading session with final results"""
-        update_data = {
-            "end_time": datetime.utcnow().isoformat(),
-            "status": "completed",
-            "final_portfolio": final_portfolio,
-            "total_profit_loss": total_pnl
-        }
-        
-        self.client.table("trading_sessions").update(update_data).eq("id", session_id).execute()
-    
-    # Trade Logging
-    async def log_trade(self, session_id: str, trade_data: dict, reasoning: str):
-        """Log a trade execution with AI reasoning"""
-        trade_log = {
-            "id": str(uuid.uuid4()),
-            "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "trade_type": trade_data.get("trade_type", "unknown"),
-            "from_token": trade_data.get("from_token"),
-            "to_token": trade_data.get("to_token"),
-            "amount": float(trade_data.get("amount", 0)),
-            "price": float(trade_data.get("price", 0)),
-            "reasoning": reasoning,
-            "market_conditions": trade_data.get("market_conditions", {}),
-            "success": trade_data.get("success", False),
-            "profit_loss": float(trade_data.get("profit_loss", 0))
-        }
-        
-        self.client.table("trade_logs").insert(trade_log).execute()
-        return trade_log["id"]
+
+    def update_trading_session_metrics(self, session_id: str, portfolio_value: float, trade_count: int = None, successful_trades: int = None, confidence: float = None, trade_volume: float = None):
+        """Update trading session with real-time metrics"""
+        try:
+            # Get current session data
+            current_session = self.client.table("trading_sessions").select("*").eq("id", session_id).execute()
+            if not current_session.data:
+                print(f"⚠️ Session {session_id} not found")
+                return
+            
+            session = current_session.data[0]
+            initial_value = float(session.get("initial_portfolio_value", 0))
+            
+            # Calculate P&L
+            total_pnl = portfolio_value - initial_value if initial_value > 0 else 0.0
+            
+            # Prepare update data
+            update_data = {
+                "current_portfolio_value": portfolio_value,
+                "total_pnl": total_pnl,
+                "total_profit_loss": total_pnl,  # Same value, different field
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            
+            # Add optional fields if provided
+            if trade_count is not None:
+                update_data["total_trades"] = trade_count
+            if successful_trades is not None:
+                update_data["successful_trades"] = successful_trades
+            if confidence is not None:
+                update_data["ai_confidence_avg"] = confidence
+            if trade_volume is not None:
+                current_volume = float(session.get("total_volume", 0))
+                update_data["total_volume"] = current_volume + trade_volume
+            
+            # Update session
+            self.client.table("trading_sessions").update(update_data).eq("id", session_id).execute()
+            print(f"✅ Updated session metrics: Portfolio ${portfolio_value:,.2f}, P&L ${total_pnl:+,.2f}")
+            
+        except Exception as e:
+            print(f"⚠️ Error updating session metrics: {e}")
+
+    def end_trading_session(self, session_id: str, final_portfolio: dict, total_pnl: float):
+        """End a trading session with comprehensive final results"""
+        try:
+            # Calculate final portfolio value
+            final_value = sum(token.get("usd_value", 0) for token in final_portfolio.get("balances", []))
+            
+            update_data = {
+                "end_time": datetime.utcnow().isoformat(),
+                "status": "completed", 
+                "final_portfolio": final_portfolio,
+                "current_portfolio_value": final_value,
+                "total_profit_loss": total_pnl,
+                "total_pnl": total_pnl,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            
+            self.client.table("trading_sessions").update(update_data).eq("id", session_id).execute()
+            print(f"✅ Session {session_id} ended with P&L: ${total_pnl:+,.2f}")
+            
+        except Exception as e:
+            print(f"⚠️ Error ending session: {e}")
+
+    # Enhanced Trade Logging with Performance Tracking
+    def log_trade_with_metrics(self, session_id: str, trade_data: dict, reasoning: str, pre_portfolio_value: float, post_portfolio_value: float):
+        """Log a trade with comprehensive performance metrics"""
+        try:
+            trade_pnl = post_portfolio_value - pre_portfolio_value
+            trade_volume = float(trade_data.get("amount", 0))
+            
+            trade_log = {
+                "id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "trade_type": trade_data.get("trade_type", "swap"),
+                "from_token": trade_data.get("from_token"),
+                "to_token": trade_data.get("to_token"),
+                "from_amount": float(trade_data.get("amount", 0)),
+                "to_amount": float(trade_data.get("to_amount", 0)),
+                "price": float(trade_data.get("price", 0)),
+                "ai_reasoning": reasoning,
+                "ai_confidence": float(trade_data.get("confidence", 0.5)),
+                "market_conditions": trade_data.get("market_conditions", {}),
+                "status": "executed" if trade_data.get("success", False) else "failed",
+                "profit_loss": trade_pnl,
+                "trade_value_usd": trade_volume,
+                "pre_trade_portfolio": pre_portfolio_value,
+                "post_trade_portfolio": post_portfolio_value,
+                "execution_time": datetime.utcnow().isoformat(),
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            # Insert trade
+            result = self.client.table("trades").insert(trade_log).execute()
+            
+            # Update session metrics
+            self.update_trading_session_metrics(
+                session_id=session_id,
+                portfolio_value=post_portfolio_value,
+                trade_volume=trade_volume,
+                confidence=float(trade_data.get("confidence", 0.5))
+            )
+            
+            return result.data[0]["id"] if result.data else None
+            
+        except Exception as e:
+            print(f"⚠️ Error logging trade: {e}")
+            return None
     
     # Strategy Storage (Vector Embeddings)
     async def store_strategy(self, strategy_text: str, embedding: List[float], 

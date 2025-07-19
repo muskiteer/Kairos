@@ -196,13 +196,26 @@ class KairosAutonomousAgent:
         }
     
     async def _start_autonomous_session(self, params: Dict[str, Any], user_id: str) -> str:
-        """Start an autonomous trading session with real database logging"""
+        """Start an autonomous trading session with real database logging and enhanced metrics"""
         
-        # Store session in database first and use the returned session_id
+        # Get real starting portfolio value first
         try:
-            # Use the correct method signature - only user_id parameter
-            session_id = await supabase_client.create_trading_session(user_id)
-            print(f"📊 Database session created: {session_id}")
+            initial_portfolio = get_portfolio(user_id=user_id)
+            start_value = self._calculate_real_portfolio_value(initial_portfolio)
+            print(f"💰 Starting portfolio value: ${start_value:,.2f}")
+        except Exception as e:
+            print(f"⚠️ Could not get initial portfolio value: {e}")
+            start_value = 0.0
+        
+        # Create session in database with enhanced metrics
+        try:
+            session_name = f"Autonomous {params.get('duration_text', '30min')} Session"
+            session_id = supabase_client.create_trading_session(
+                user_id=user_id,
+                session_name=session_name,
+                initial_portfolio_value=start_value
+            )
+            print(f"✅ Created database session: {session_id}")
             
             # Initialize message order counter for this session
             self.message_order_counter[session_id] = 1
@@ -215,14 +228,6 @@ class KairosAutonomousAgent:
             # Fallback to local session ID if database fails
             session_id = str(uuid.uuid4())
             self.message_order_counter[session_id] = 1
-        
-        # Get real starting portfolio value
-        try:
-            initial_portfolio = get_portfolio(user_id=user_id)
-            start_value = self._calculate_real_portfolio_value(initial_portfolio)
-        except Exception as e:
-            print(f"⚠️ Could not get initial portfolio value: {e}")
-            start_value = 0
         
         session_data = {
             "session_id": session_id,
@@ -239,7 +244,9 @@ class KairosAutonomousAgent:
                 "current_portfolio_value": start_value,
                 "best_trade": None,
                 "worst_trade": None,
-                "roi_percentage": 0.0
+                "roi_percentage": 0.0,
+                "total_volume": 0.0,
+                "avg_confidence": 0.0
             },
             "reasoning_log": [],
             "last_cycle": None,
@@ -685,83 +692,178 @@ class KairosAutonomousAgent:
             return False
     
     def _create_learning_strategy(self, market_data: Dict, portfolio_analysis: Dict, testing_mode: bool) -> Dict:
-        """Create a new learning strategy based on current market conditions"""
+        """Create a new learning strategy with higher value trades and cross-token opportunities"""
         
         usdc_balance = portfolio_analysis.get("tokens", {}).get("USDC", {}).get("amount", 0)
         eth_balance = portfolio_analysis.get("tokens", {}).get("ETH", {}).get("amount", 0)
+        btc_balance = portfolio_analysis.get("tokens", {}).get("BTC", {}).get("amount", 0)
         sentiment = market_data.get("sentiment", "neutral")
         eth_price = market_data.get("prices", {}).get("ETH", 0)
+        btc_price = market_data.get("prices", {}).get("BTC", 0)
         
-        # Generate strategy based on current conditions
-        if sentiment == "bullish" and usdc_balance > 20:
-            # Bullish sentiment strategy
-            amount = min(usdc_balance * 0.1, 50 if testing_mode else 100)
+        # Determine trade size based on portfolio and testing mode
+        portfolio_value = portfolio_analysis.get("total_value", 0)
+        
+        if testing_mode:
+            # Conservative amounts for testing
+            small_trade = min(50, usdc_balance * 0.05)
+            medium_trade = min(100, usdc_balance * 0.1)
+            large_trade = min(200, usdc_balance * 0.15)
+        else:
+            # More aggressive amounts for real trading
+            small_trade = min(100, usdc_balance * 0.08)
+            medium_trade = min(300, usdc_balance * 0.15)
+            large_trade = min(800, usdc_balance * 0.25)
+            aggressive_trade = min(1200, usdc_balance * 0.3) if portfolio_value > 2000 else medium_trade
+        
+        # CROSS-TOKEN STRATEGIES (BTC <-> ETH)
+        if eth_balance > 0.02 and btc_balance < 0.005 and sentiment == "bullish":
+            # ETH to BTC rotation strategy
+            eth_amount = min(eth_balance * 0.3, 0.1)  # Max 0.1 ETH
             return {
-                "name": f"sentiment_bullish_{datetime.utcnow().strftime('%H%M')}",
-                "type": "momentum",
-                "confidence": 0.6,
-                "description": f"Buy ETH on bullish sentiment (${eth_price:.0f})",
+                "name": f"eth_btc_rotation_{datetime.utcnow().strftime('%H%M')}",
+                "type": "rotation",
+                "confidence": 0.7,
+                "description": f"Rotate ETH to BTC on bullish sentiment (ETH: ${eth_price:.0f}, BTC: ${btc_price:.0f})",
+                "params": {
+                    "action": "rotate",
+                    "from_token": "ETH",
+                    "to_token": "BTC",
+                    "amount": eth_amount
+                },
+                "analysis": {"cross_token_rotation": True, "eth_price": eth_price, "btc_price": btc_price}
+            }
+        
+        elif btc_balance > 0.005 and eth_balance < 0.05 and sentiment != "bearish":
+            # BTC to ETH rotation strategy
+            btc_amount = min(btc_balance * 0.4, 0.002)  # Max 0.002 BTC
+            return {
+                "name": f"btc_eth_rotation_{datetime.utcnow().strftime('%H%M')}",
+                "type": "rotation",
+                "confidence": 0.7,
+                "description": f"Rotate BTC to ETH (BTC: ${btc_price:.0f}, ETH: ${eth_price:.0f})",
+                "params": {
+                    "action": "rotate",
+                    "from_token": "BTC",
+                    "to_token": "ETH",
+                    "amount": btc_amount
+                },
+                "analysis": {"cross_token_rotation": True, "eth_price": eth_price, "btc_price": btc_price}
+            }
+        
+        # SENTIMENT-BASED STRATEGIES WITH HIGHER VALUES
+        elif sentiment == "bullish" and usdc_balance > 100:
+            # Aggressive bullish strategy
+            if portfolio_value > 1000 and not testing_mode:
+                amount = aggressive_trade if 'aggressive_trade' in locals() else large_trade
+                strategy_type = "aggressive_momentum"
+            else:
+                amount = large_trade if usdc_balance > 300 else medium_trade
+                strategy_type = "momentum"
+            
+            return {
+                "name": f"bullish_{strategy_type}_{datetime.utcnow().strftime('%H%M')}",
+                "type": strategy_type,
+                "confidence": 0.8,
+                "description": f"Aggressive buy on strong bullish sentiment (${eth_price:.0f})",
                 "params": {
                     "action": "buy",
                     "from_token": "USDC",
                     "to_token": "ETH",
                     "amount": amount
                 },
-                "analysis": {"sentiment": sentiment, "eth_price": eth_price}
+                "analysis": {"sentiment": sentiment, "eth_price": eth_price, "trade_size": "large"}
             }
         
-        elif sentiment == "bearish" and eth_balance > 0.01:
-            # Bearish sentiment strategy
-            amount = eth_balance * 0.2
+        elif sentiment == "bearish" and eth_balance > 0.05:
+            # Sell strategy on bearish sentiment
+            eth_amount = eth_balance * 0.4 if not testing_mode else eth_balance * 0.2
             return {
-                "name": f"sentiment_bearish_{datetime.utcnow().strftime('%H%M')}",
+                "name": f"bearish_sell_{datetime.utcnow().strftime('%H%M')}",
                 "type": "momentum",
-                "confidence": 0.6,
+                "confidence": 0.75,
                 "description": f"Sell ETH on bearish sentiment (${eth_price:.0f})",
                 "params": {
                     "action": "sell",
                     "from_token": "ETH",
                     "to_token": "USDC",
-                    "amount": amount
+                    "amount": eth_amount
                 },
-                "analysis": {"sentiment": sentiment, "eth_price": eth_price}
+                "analysis": {"sentiment": sentiment, "eth_price": eth_price, "defensive_move": True}
             }
         
-        elif usdc_balance >= 15:
-            # Default learning strategy - small buy
-            amount = 10 if testing_mode else 15
+        # ACCUMULATION STRATEGIES
+        elif usdc_balance >= 200 and sentiment != "bearish":
+            # Medium accumulation strategy
+            amount = medium_trade
             return {
-                "name": f"learning_buy_{datetime.utcnow().strftime('%H%M')}",
-                "type": "custom",
-                "confidence": 0.4,
-                "description": "Small learning trade to gather data",
+                "name": f"accumulation_{datetime.utcnow().strftime('%H%M')}",
+                "type": "dca",
+                "confidence": 0.65,
+                "description": f"Medium ETH accumulation (${amount:.0f} at ${eth_price:.0f})",
                 "params": {
                     "action": "buy",
                     "from_token": "USDC",
                     "to_token": "ETH",
                     "amount": amount
                 },
-                "analysis": {"learning_trade": True, "eth_price": eth_price}
+                "analysis": {"accumulation_strategy": True, "eth_price": eth_price}
+            }
+        
+        # HIGH-VALUE LEARNING STRATEGIES
+        elif usdc_balance >= 150:
+            # Learning strategy with decent size
+            amount = medium_trade if usdc_balance > 400 else small_trade
+            return {
+                "name": f"learning_medium_{datetime.utcnow().strftime('%H%M')}",
+                "type": "custom",
+                "confidence": 0.6,
+                "description": f"Medium learning trade (${amount:.0f})",
+                "params": {
+                    "action": "buy",
+                    "from_token": "USDC",
+                    "to_token": "ETH",
+                    "amount": amount
+                },
+                "analysis": {"learning_trade": True, "eth_price": eth_price, "trade_size": "medium"}
+            }
+        
+        elif usdc_balance >= 50:
+            # Small learning strategy
+            amount = small_trade
+            return {
+                "name": f"learning_small_{datetime.utcnow().strftime('%H%M')}",
+                "type": "custom",
+                "confidence": 0.5,
+                "description": f"Small learning trade (${amount:.0f})",
+                "params": {
+                    "action": "buy",
+                    "from_token": "USDC",
+                    "to_token": "ETH",
+                    "amount": amount
+                },
+                "analysis": {"learning_trade": True, "eth_price": eth_price, "trade_size": "small"}
             }
         
         else:
-            # Absolute minimum fallback
+            # Minimum learning strategy
+            amount = min(25, usdc_balance * 0.8) if usdc_balance > 10 else 5
             return {
                 "name": "micro_learning",
                 "type": "custom",
                 "confidence": 0.3,
-                "description": "Micro learning trade",
+                "description": f"Micro learning trade (${amount:.0f})",
                 "params": {
                     "action": "buy",
                     "from_token": "USDC",
                     "to_token": "ETH",
-                    "amount": 5
+                    "amount": amount
                 },
-                "analysis": {"micro_trade": True}
+                "analysis": {"micro_trade": True, "limited_funds": True}
             }
 
     async def _execute_autonomous_trade(self, trade_params: Dict, session_id: str) -> Dict[str, Any]:
-        """Execute autonomous trade with strategy performance tracking"""
+        """Execute autonomous trade with enhanced database logging and performance tracking"""
         
         session = self.autonomous_sessions[session_id]
         
@@ -769,6 +871,9 @@ class KairosAutonomousAgent:
             from_token = trade_params["from_token"]
             to_token = trade_params["to_token"]
             amount = trade_params["amount"]
+            
+            # Get pre-trade portfolio value for accurate P&L calculation
+            pre_trade_portfolio_value = self._get_current_portfolio_value(session["user_id"])
             
             # Check balance
             balance_data = get_token_balance(from_token)
@@ -785,10 +890,38 @@ class KairosAutonomousAgent:
             from_address = token_addresses.get(from_token.upper())
             to_address = token_addresses.get(to_token.upper())
             
+            print(f"🔄 Executing trade: ${amount:.2f} {from_token} → {to_token}")
             trade_result = trade_exec(from_address, to_address, amount)
             
+            # Get post-trade portfolio value
+            post_trade_portfolio_value = self._get_current_portfolio_value(session["user_id"])
+            
             if trade_result and "error" not in trade_result:
-                # Log successful trade
+                # Prepare enhanced trade data for database
+                enhanced_trade_data = {
+                    "trade_type": "swap",
+                    "from_token": from_token,
+                    "to_token": to_token,
+                    "amount": amount,
+                    "to_amount": trade_result.get("to_amount", 0),
+                    "price": trade_result.get("price", 0),
+                    "success": True,
+                    "confidence": trade_params.get("confidence", 0.5),
+                    "market_conditions": trade_params.get("market_conditions", {}),
+                    "trade_result": trade_result
+                }
+                
+                # Log to database with comprehensive metrics
+                trade_reasoning = f"Autonomous trade: {trade_params.get('strategy_used', 'unknown')} strategy"
+                db_trade_id = supabase_client.log_trade_with_metrics(
+                    session_id=session_id,
+                    trade_data=enhanced_trade_data,
+                    reasoning=trade_reasoning,
+                    pre_portfolio_value=pre_trade_portfolio_value,
+                    post_portfolio_value=post_trade_portfolio_value
+                )
+                
+                # Create trade record for in-memory session
                 trade_record = {
                     "timestamp": datetime.utcnow().isoformat(),
                     "from_token": from_token,
@@ -796,16 +929,29 @@ class KairosAutonomousAgent:
                     "amount": amount,
                     "success": True,
                     "trade_result": trade_result,
-                    "pre_trade_portfolio_value": self._get_current_portfolio_value(session["user_id"])
+                    "pre_trade_portfolio_value": pre_trade_portfolio_value,
+                    "post_trade_portfolio_value": post_trade_portfolio_value,
+                    "db_trade_id": db_trade_id,
+                    "profit_loss": post_trade_portfolio_value - pre_trade_portfolio_value
                 }
                 
+                # Update in-memory session performance
                 session["trades_executed"].append(trade_record)
                 session["performance"]["total_trades"] += 1
                 session["performance"]["successful_trades"] += 1
+                session["performance"]["current_portfolio_value"] = post_trade_portfolio_value
+                session["performance"]["total_profit_loss"] = post_trade_portfolio_value - session["performance"]["start_portfolio_value"]
+                session["performance"]["total_volume"] += amount
                 
-                print(f"✅ Autonomous trade executed: {amount} {from_token} → {to_token}")
+                # Calculate ROI
+                start_value = session["performance"]["start_portfolio_value"]
+                if start_value > 0:
+                    session["performance"]["roi_percentage"] = ((post_trade_portfolio_value - start_value) / start_value) * 100
                 
-                # Schedule strategy performance evaluation (will be done later)
+                print(f"✅ Trade executed: ${amount:.2f} {from_token} → {to_token}")
+                print(f"💰 Portfolio: ${pre_trade_portfolio_value:,.2f} → ${post_trade_portfolio_value:,.2f} ({post_trade_portfolio_value - pre_trade_portfolio_value:+.2f})")
+                
+                # Schedule strategy performance evaluation
                 asyncio.create_task(self._schedule_trade_evaluation(
                     session_id, trade_record, len(session["trades_executed"]) - 1
                 ))
@@ -813,10 +959,33 @@ class KairosAutonomousAgent:
                 return {
                     "success": True,
                     "trade_record": trade_record,
-                    "trade_result": trade_result
+                    "trade_result": trade_result,
+                    "portfolio_change": post_trade_portfolio_value - pre_trade_portfolio_value
                 }
             else:
-                session["performance"]["total_trades"] += 1  # Count failed trades too
+                # Handle failed trade
+                failed_trade_data = {
+                    "trade_type": "swap",
+                    "from_token": from_token,
+                    "to_token": to_token,
+                    "amount": amount,
+                    "success": False,
+                    "confidence": trade_params.get("confidence", 0.5),
+                    "market_conditions": trade_params.get("market_conditions", {}),
+                    "error": trade_result.get("error", "Unknown error")
+                }
+                
+                # Log failed trade to database
+                trade_reasoning = f"Failed autonomous trade: {trade_result.get('error', 'Unknown error')}"
+                supabase_client.log_trade_with_metrics(
+                    session_id=session_id,
+                    trade_data=failed_trade_data,
+                    reasoning=trade_reasoning,
+                    pre_portfolio_value=pre_trade_portfolio_value,
+                    post_portfolio_value=pre_trade_portfolio_value  # No change on failure
+                )
+                
+                session["performance"]["total_trades"] += 1
                 return {
                     "success": False,
                     "error": trade_result.get("error", "Unknown error"),
@@ -825,7 +994,7 @@ class KairosAutonomousAgent:
                 
         except Exception as e:
             print(f"❌ Autonomous trade execution error: {e}")
-            session["performance"]["total_trades"] += 1  # Count failed trades
+            session["performance"]["total_trades"] += 1
             return {
                 "success": False,
                 "error": str(e),
@@ -1391,24 +1560,85 @@ class KairosAutonomousAgent:
         try:
             total_value = 0.0
             
-            if isinstance(portfolio_data, dict) and 'tokens' in portfolio_data:
-                tokens = portfolio_data.get('tokens', {})
-                
-                for token_symbol, token_data in tokens.items():
-                    if isinstance(token_data, dict):
-                        amount = token_data.get('amount', 0)
-                        usd_value = token_data.get('usd_value', 0)
-                        
-                        if usd_value and amount:
-                            total_value += float(usd_value)
-                        elif token_symbol.upper() == 'USDC':
-                            # USDC is roughly 1:1 with USD
-                            total_value += float(amount)
-                            
+            # Define known stablecoins that should be valued at 1:1 USD
+            stablecoins = {'USDC', 'USDT', 'DAI', 'USDBC', 'USDC.E', 'BUSD', 'FRAX'}
+            
+            print(f"🔍 DEBUG_CALC: Starting portfolio calculation with data: {portfolio_data}")
+            
+            # Handle both dict with 'balances' key and direct list of balances
+            balances = []
+            if isinstance(portfolio_data, dict):
+                if 'balances' in portfolio_data:
+                    balances = portfolio_data['balances']
+                elif 'tokens' in portfolio_data:
+                    # Legacy support for 'tokens' key structure
+                    tokens_dict = portfolio_data['tokens']
+                    if isinstance(tokens_dict, dict):
+                        for symbol, token_data in tokens_dict.items():
+                            if isinstance(token_data, dict) and 'amount' in token_data:
+                                balances.append({
+                                    'symbol': symbol,
+                                    'amount': token_data['amount']
+                                })
+            elif isinstance(portfolio_data, list):
+                balances = portfolio_data
+            
+            print(f"🔍 DEBUG_CALC: Found {len(balances)} token balances to process")
+            
+            for balance in balances:
+                try:
+                    if not isinstance(balance, dict):
+                        print(f"⚠️ DEBUG_CALC: Skipping invalid balance entry: {balance}")
+                        continue
+                    
+                    symbol = balance.get('symbol', '').upper()
+                    amount = balance.get('amount', balance.get('balance', 0))
+                    
+                    # Convert amount to float safely
+                    try:
+                        amount = float(amount)
+                    except (ValueError, TypeError):
+                        print(f"⚠️ DEBUG_CALC: Invalid amount for {symbol}: {amount}")
+                        continue
+                    
+                    if amount <= 0:
+                        print(f"🔍 DEBUG_CALC: Skipping {symbol} - zero or negative amount: {amount}")
+                        continue
+                    
+                    # Calculate USD value
+                    token_usd_value = 0.0
+                    
+                    if symbol in stablecoins:
+                        # Stablecoins are valued at 1:1 USD
+                        token_usd_value = amount * 1.0
+                        print(f"💰 DEBUG_CALC: {symbol} (Stablecoin): {amount:.6f} × $1.00 = ${token_usd_value:.2f}")
+                    else:
+                        # Get real-time price for non-stablecoins
+                        try:
+                            price_data = get_token_price_json(symbol)
+                            if isinstance(price_data, dict) and 'price' in price_data:
+                                price = float(price_data['price'])
+                                token_usd_value = amount * price
+                                print(f"💰 DEBUG_CALC: {symbol}: {amount:.6f} × ${price:.2f} = ${token_usd_value:.2f}")
+                            else:
+                                print(f"⚠️ DEBUG_CALC: No price data for {symbol}: {price_data}")
+                                continue
+                        except Exception as price_error:
+                            print(f"⚠️ DEBUG_CALC: Error fetching price for {symbol}: {price_error}")
+                            continue
+                    
+                    total_value += token_usd_value
+                    print(f"📊 DEBUG_CALC: Running total: ${total_value:.2f}")
+                    
+                except Exception as token_error:
+                    print(f"⚠️ DEBUG_CALC: Error processing token {balance}: {token_error}")
+                    continue
+            
+            print(f"✅ DEBUG_CALC: Final portfolio value: ${total_value:.2f}")
             return total_value
             
         except Exception as e:
-            print(f"⚠️ Error calculating portfolio value: {e}")
+            print(f"❌ Error calculating portfolio value: {e}")
             return 0.0
 
     def _calculate_risk_score(self, market_data: Dict, portfolio_analysis: Dict, decision: Dict) -> float:

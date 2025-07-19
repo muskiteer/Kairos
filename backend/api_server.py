@@ -6,6 +6,7 @@ Provides REST API endpoints for the frontend chat interface
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -606,24 +607,134 @@ async def get_features():
 
 @app.get("/api/autonomous/status/{session_id}")
 async def get_autonomous_status(session_id: str, user_id: str = "default"):
-    """Get real-time status of autonomous trading session"""
+    """Get real-time status of autonomous trading session and generate PDF report"""
     try:
+        print(f"🔍 Status request for session {session_id[:8]}... with user_id {user_id}")
+        
         autonomous_agent = get_user_autonomous_agent(user_id)
+        print(f"📊 Got agent, checking {len(autonomous_agent.autonomous_sessions)} sessions")
+        
+        session_data = None
+        found_user = user_id
+        
+        # Check if the session exists in this agent instance
         if session_id in autonomous_agent.autonomous_sessions:
+            print(f"✅ Found session in current agent")
             session_data = autonomous_agent.autonomous_sessions[session_id]
-            return {
+        else:
+            print(f"🔍 Session not found in current agent, searching other agents...")
+            # Check if session might exist in other user agents or globally
+            total_sessions = 0
+            for uid, agents in user_agents.items():
+                try:
+                    if "autonomous" in agents and hasattr(agents["autonomous"], "autonomous_sessions"):
+                        agent_sessions = agents["autonomous"].autonomous_sessions
+                        total_sessions += len(agent_sessions)
+                        
+                        if session_id in agent_sessions:
+                            print(f"✅ Found session in user {uid}")
+                            session_data = agent_sessions[session_id]
+                            found_user = uid
+                            break
+                except Exception as agent_error:
+                    print(f"⚠️ Error checking agent for user {uid}: {agent_error}")
+                    continue
+        
+        if session_data:
+            # Extract performance data to top level for client compatibility
+            performance_data = session_data.get("performance", {})
+            
+            # Generate comprehensive PDF report
+            pdf_report_path = None
+            try:
+                from utils.autonomous_report_generator import generate_autonomous_session_report
+                
+                # Prepare comprehensive data structure for PDF generation
+                comprehensive_session_data = {
+                    'session_data': session_data,
+                    'performance': performance_data
+                }
+                
+                pdf_report_path = generate_autonomous_session_report(comprehensive_session_data)
+                print(f"✅ PDF report generated: {pdf_report_path}")
+                
+            except ImportError as import_error:
+                print(f"⚠️ PDF generator not available: {import_error}")
+            except Exception as pdf_error:
+                print(f"❌ PDF generation failed: {pdf_error}")
+                # Continue without PDF - don't fail the entire request
+            
+            response_data = {
                 "session_found": True,
                 "session_data": session_data,
+                "performance": performance_data,  # Top-level performance for client
+                "found_in_user": found_user,
                 "timestamp": datetime.now().isoformat()
             }
+            
+            # Add PDF information if generated successfully
+            if pdf_report_path:
+                response_data["pdf_report_path"] = pdf_report_path
+                response_data["pdf_report_filename"] = os.path.basename(pdf_report_path)
+                response_data["pdf_report_url"] = f"/api/download-report/{os.path.basename(pdf_report_path)}"
+                response_data["pdf_generated"] = True
+                print(f"📄 PDF report available at: {pdf_report_path}")
+            else:
+                response_data["pdf_generated"] = False
+                response_data["pdf_error"] = "PDF generation failed or unavailable"
+            
+            return response_data
         else:
+            total_sessions = sum(
+                len(agents.get("autonomous", {}).get("autonomous_sessions", {})) 
+                for agents in user_agents.values() 
+                if isinstance(agents, dict) and "autonomous" in agents
+            )
+            
+            print(f"❌ Session not found anywhere. Total sessions: {total_sessions}")
+            
+            # Session truly not found
             return {
                 "session_found": False,
-                "message": "Session not found",
-                "timestamp": datetime.now().isoformat()
+                "message": f"Session {session_id} not found in any active agents",
+                "total_active_sessions": total_sessions,
+                "searched_users": list(user_agents.keys()),
+                "timestamp": datetime.now().isoformat(),
+                "pdf_generated": False
             }
+            
     except Exception as e:
+        print(f"❌ Error in status endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting session status: {str(e)}")
+
+@app.get("/api/download-report/{filename}")
+async def download_report(filename: str):
+    """Download generated PDF report from /tmp directory"""
+    try:
+        # Validate filename to prevent directory traversal
+        if '..' in filename or '/' in filename or '\\' in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        file_path = f"/tmp/{filename}"
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Report file not found")
+        
+        # Serve the file for download
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error downloading report: {e}")
+        raise HTTPException(status_code=500, detail=f"Error downloading report: {str(e)}")
 
 @app.get("/api/autonomous/sessions")
 async def list_autonomous_sessions(user_id: str = "default"):
