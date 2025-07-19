@@ -175,6 +175,69 @@ class SupabaseClient:
         except Exception as e:
             print(f"⚠️ Error inserting strategy: {e}")
             return {}
+        
+
+    # Add these methods to the SupabaseClient class (around line 180, before update_strategy_performance):
+
+    # AI Conversations for Decision Persistence
+    def insert_ai_conversation(self, data: dict) -> dict:
+        """Insert an AI conversation/decision record"""
+        try:
+            result = self.client.table("ai_conversations").insert(data).execute()
+            return result.data[0] if result.data else {}
+        except Exception as e:
+            print(f"⚠️ Error inserting AI conversation: {e}")
+            return {}
+    
+    def get_ai_conversations(self, session_id: str) -> List[dict]:
+        """Get all AI conversations for a session, ordered by message_order"""
+        try:
+            result = self.client.table("ai_conversations").select("*").eq("session_id", session_id).order("message_order").execute()
+            return result.data if result.data else []
+        except Exception as e:
+            print(f"⚠️ Error fetching AI conversations: {e}")
+            return []
+    
+    def get_latest_message_order(self, session_id: str) -> int:
+        """Get the latest message_order for a session to avoid conflicts"""
+        try:
+            result = self.client.table("ai_conversations").select("message_order").eq("session_id", session_id).order("message_order", desc=True).limit(1).execute()
+            if result.data:
+                return result.data[0]["message_order"] + 1
+            return 1
+        except Exception as e:
+            print(f"⚠️ Error getting latest message order: {e}")
+            return 1
+    
+    def insert_trade_record(self, session_id: str, trade_data: dict) -> dict:
+        """Insert a trade record with AI reasoning"""
+        try:
+            full_trade_data = {
+                "session_id": session_id,
+                **trade_data,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            result = self.client.table("trades").insert(full_trade_data).execute()
+            return result.data[0] if result.data else {}
+        except Exception as e:
+            print(f"⚠️ Error inserting trade record: {e}")
+            return {}
+    
+    def get_session_memory_summary(self, session_id: str) -> dict:
+        """Get a summary of session memory for quick loading"""
+        try:
+            conversations = self.get_ai_conversations(session_id)
+            trades_result = self.client.table("trades").select("*").eq("session_id", session_id).order("created_at").execute()
+            strategies_result = self.client.table("ai_strategies").select("*").eq("session_id", session_id).execute()
+            
+            return {
+                "conversations": conversations,
+                "trades": trades_result.data if trades_result.data else [],
+                "strategies": strategies_result.data if strategies_result.data else []
+            }
+        except Exception as e:
+            print(f"⚠️ Error getting session memory: {e}")
+            return {"conversations": [], "trades": [], "strategies": []}
     
     def update_strategy_performance(self, strategy_id: str, success: bool, performance_data: dict):
         """Update strategy performance after execution"""
