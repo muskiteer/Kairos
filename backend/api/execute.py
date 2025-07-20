@@ -12,16 +12,27 @@ load_dotenv()
 API_KEY = os.getenv("RECALL_API_KEY")
 RECALL_SANDBOX_API_BASE = "https://api.sandbox.competitions.recall.network"
 
-# Supported tokens and their addresses
+# Supported tokens and their addresses - EXPANDED LIST
 token_addresses = {
+    # Ethereum Mainnet tokens
     "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", 
     "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "ETH":  "0x0000000000000000000000000000000000000000",
     "DAI":  "0x6B175474E89094C44Da98b954EedeAC495271d0F",
     "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
     "UNI":  "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
     "LINK": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
-    "ETH":  "0x0000000000000000000000000000000000000000",
+    "AAVE": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+    "MATIC": "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0",
+    
+    # Solana tokens (SVM chain)
+    "SOL": "So11111111111111111111111111111111111111112",
+    "USDC_SOL": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    
+    # Additional popular tokens that may be supported
+    "PEPE": "0x6982508145454Ce325dDbE47a25d4ec3d2311933",
+    "SHIB": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE",
 }
 
 def trade_exec(from_token_address, to_token_address, amount):
