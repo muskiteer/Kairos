@@ -14,6 +14,7 @@ RECALL_SANDBOX_API_BASE = "https://api.sandbox.competitions.recall.network"
 
 # Supported tokens and their addresses - EXPANDED LIST
 token_addresses = {
+    "USDbC": "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
     # Ethereum Mainnet tokens
     "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", 
@@ -35,19 +36,34 @@ token_addresses = {
     "SHIB": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE",
 }
 
-def trade_exec(from_token_address, to_token_address, amount):
+CHAIN_MAP = {
+    "ethereum": "eth", "eth": "eth", "solana": "sol", "sol": "sol",
+    "polygon": "matic", "base": "base", "arbitrum": "arbitrum", "optimism": "optimism"
+}
+
+def trade_exec(from_token_address: str, to_token_address: str, amount: float, chain: str):
+    """Executes a token trade via Recall API with chain awareness."""
     url = f"{RECALL_SANDBOX_API_BASE}/api/trade/execute"
+    
+    chain_lower = chain.lower()
+    if chain_lower not in CHAIN_MAP:
+        print(f"❌ Trade failed: Unsupported chain '{chain}'")
+        return {"error": f"Unsupported chain: {chain}"}
+
+    api_chain_name = CHAIN_MAP[chain_lower]
+    # The main chain type is 'solana' for SOL, and 'evm' for all others
+    chain_type = "solana" if api_chain_name == "sol" else "evm"
 
     payload = {
         "fromToken": from_token_address,
         "toToken": to_token_address,
         "amount": str(amount),
-        "reason": "CLI trade for analysis/testing",
+        "reason": "Kairos AI autonomous trade",
         "slippageTolerance": "0.5",
-        "fromChain": "evm",
-        "fromSpecificChain": "eth",
-        "toChain": "evm",
-        "toSpecificChain": "eth"
+        "fromChain": chain_type,
+        "fromSpecificChain": api_chain_name,
+        "toChain": chain_type,
+        "toSpecificChain": api_chain_name
     }
 
     headers = {
@@ -56,54 +72,12 @@ def trade_exec(from_token_address, to_token_address, amount):
     }
 
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=30)
-        if resp.ok:
-            return resp.json()
-        else:
-            print(f"❌ Trade failed: {resp.status_code} - {resp.text}")
-            return None
+        resp = requests.post(url, json=payload, headers=headers, timeout=45)
+        resp.raise_for_status() # Will raise an exception for 4xx/5xx errors
+        return resp.json()
+    except requests.exceptions.HTTPError as e:
+        print(f"❌ Trade failed: {e.response.status_code} - {e.response.text}")
+        return e.response.json() # Return the actual error from the API
     except Exception as e:
         print(f"⚠️  Trade execution error: {e}")
-        return None
-
-def main():
-    parser = argparse.ArgumentParser(description="Execute a token trade via Recall API")
-    parser.add_argument("--from", dest="from_token", required=True, help="Token to trade from (e.g., USDC)")
-    parser.add_argument("--to", dest="to_token", required=True, help="Token to trade to (e.g., WETH)")
-    parser.add_argument("--amount", required=True, type=float, help="Amount of from_token to trade")
-    args = parser.parse_args()
-
-    from_token = args.from_token.upper()
-    to_token = args.to_token.upper()
-    amount = args.amount
-
-    # Check for supported tokens
-    if from_token not in token_addresses or to_token not in token_addresses:
-        print(json.dumps({
-            "error": "Unsupported token(s)",
-            "supported_tokens": list(token_addresses.keys())
-        }))
-        return
-
-    # Get balance
-    balance_info = get_token_balance(from_token)
-    balance = balance_info.get("amount", 0)
-
-    if balance < amount:
-        print(json.dumps({
-            "error": "Insufficient balance",
-            "balance": balance,
-            "required": amount
-        }))
-        return
-
-    # Get token addresses
-    from_address = token_addresses[from_token]
-    to_address = token_addresses[to_token]
-
-    # Execute trade
-    result = trade_exec(from_address, to_address, amount)
-    print(json.dumps(result, indent=2))
-
-if __name__ == "__main__":
-    main()
+        return {"error": str(e)}

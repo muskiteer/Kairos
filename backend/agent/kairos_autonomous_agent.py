@@ -50,8 +50,16 @@ class KairosAutonomousAgent:
         """Implements the full Perceive -> Reason & Decide -> Act -> Learn workflow."""
         try:
             print("\n🔍 Step 1: Gathering market intelligence and portfolio state...")
+            
+            # This is now the only call needed for portfolio and price data.
             portfolio_state = self._analyze_current_portfolio()
-            market_prices = self._get_all_market_prices()
+            
+            # Create the market_prices dict for the AI prompt from the enriched portfolio.
+            market_prices = {
+                asset['symbol']: asset['usd_value'] / asset['amount'] 
+                for asset in portfolio_state.get('balances', []) if asset.get('amount') > 0
+            }
+            
             news_data = get_trending_news(limit=10)
             strategy_performance = supabase_client.get_strategies_for_session(self.session_id)
             print(f"🧠 Loading {len(strategy_performance)} past strategies from memory...")
@@ -61,6 +69,7 @@ class KairosAutonomousAgent:
                 portfolio_state, market_prices, news_data, strategy_performance
             )
 
+            # ... rest of the function remains the same ...
             execution_result = {"success": False, "error": "AI decided not to trade."}
             if ai_decision.get("should_trade"):
                 print("\n🎯 Step 3: Validating and Executing AI's chosen trade...")
@@ -80,31 +89,40 @@ class KairosAutonomousAgent:
             traceback.print_exc()
             print(f"❌ ERROR in decision cycle: {e}")
 
+# In your kairos_autonomous_agent.py
+
     def _execute_autonomous_trade(self, trade_params: Dict) -> Dict:
         """Executes a trade and returns the result."""
         try:
             from_token = trade_params["from_token"]
             to_token = trade_params["to_token"]
+            chain = trade_params["chain"] # <-- Get the chain from the trade params
             amount = float(trade_params["amount"])
+            
+            # Note: Your token_addresses dict needs to be imported here
             from_address = token_addresses.get(from_token.upper())
             to_address = token_addresses.get(to_token.upper())
 
             if not from_address or not to_address:
                 raise ValueError(f"Unsupported token(s): {from_token}, {to_token}")
             
-            print(f"🔥 Executing trade: {amount:.6f} {from_token} -> {to_token}")
-            trade_result = trade_exec(from_address, to_address, amount)
+            print(f"🔥 Executing trade: {amount:.6f} {from_token} -> {to_token} on {chain}")
+            
+            # Pass the chain to the execution function
+            trade_result = trade_exec(from_address, to_address, amount, chain)
 
             if trade_result and "transaction" in trade_result and "txHash" in trade_result["transaction"]:
-                print("✅ Trade successful.")
+                print(f"✅ Trade successful. TxHash: {trade_result['transaction']['txHash']}")
                 return {"success": True, "result": trade_result}
             else:
-                error = trade_result.get("error", "Unknown error") if trade_result else "Execution failed."
+                # Use the detailed error from the API if available
+                error = trade_result.get("error", "Unknown execution error") if trade_result else "Execution failed."
                 print(f"❌ Trade failed: {error}")
                 return {"success": False, "error": error}
         except Exception as e:
             print(f"❌ CRITICAL EXECUTION ERROR: {e}")
             return {"success": False, "error": str(e)}
+        
 
     def _learn_from_decision(self, decision: Dict, execution: Dict, market_data: Dict):
         """Persists the AI's decision and trade outcome to the database."""
@@ -162,20 +180,25 @@ class KairosAutonomousAgent:
             return False, "AI returned invalid trade_params (not a dictionary)."
 
         from_token = trade_params.get('from_token')
+        chain = trade_params.get('chain')
         try:
             amount_to_trade = float(trade_params.get('amount', 0))
         except (ValueError, TypeError):
-             return False, f"Invalid trade amount from AI: {trade_params.get('amount')}"
+            return False, f"Invalid trade amount from AI: {trade_params.get('amount')}"
 
-        if not from_token or amount_to_trade <= 0:
-            return False, "Invalid trade parameters (missing token or zero/negative amount)."
+        if not from_token or not chain or amount_to_trade <= 0:
+            return False, "Invalid trade parameters (missing token, chain, or zero/negative amount)."
 
-        # ** FIX: Aggregate balances for the same token across all chains **
+        # Only sum balances for the specified token and chain
         total_available_balance = 0.0
         chain_specific_balances = []
-        
+
         for token_data in portfolio.get('balances', []):
-            if isinstance(token_data, dict) and token_data.get('symbol') == from_token:
+            if (
+                isinstance(token_data, dict)
+                and token_data.get('symbol') == from_token
+                and token_data.get('chain', '').lower() == chain.lower()
+            ):
                 balance_amount = float(token_data.get('amount', 0))
                 total_available_balance += balance_amount
                 chain_specific_balances.append({
@@ -183,90 +206,123 @@ class KairosAutonomousAgent:
                     'amount': balance_amount,
                     'usd_value': token_data.get('usd_value', 0)
                 })
-        
-        print(f"💰 Multi-Chain Balance Check for {from_token}:")
+
+        print(f"💰 Chain-Specific Balance Check for {from_token} on {chain}:")
         for chain_balance in chain_specific_balances:
             print(f"  - {chain_balance['chain']}: {chain_balance['amount']:,.6f} {from_token}")
-        print(f"  - TOTAL AVAILABLE: {total_available_balance:,.6f} {from_token}")
+        print(f"  - TOTAL AVAILABLE: {total_available_balance:,.6f} {from_token} on {chain}")
         print(f"  - AI WANTS TO TRADE: {amount_to_trade:,.6f} {from_token}")
 
         if total_available_balance < amount_to_trade:
-            return False, f"Insufficient total balance for {from_token}. Available: {total_available_balance:.6f}, Requested: {amount_to_trade:.6f}"
+            return False, f"Insufficient balance for {from_token} on {chain}. Available: {total_available_balance:.6f}, Requested: {amount_to_trade:.6f}"
 
-        # ** ADDITIONAL CHECK: Warn if trade amount is > 50% of total balance **
         if amount_to_trade > (total_available_balance * 0.5):
-            print(f"⚠️ WARNING: Trading {amount_to_trade:.6f} is more than 50% of total {from_token} balance ({total_available_balance:.6f})")
+            print(f"⚠️ WARNING: Trading {amount_to_trade:.6f} is more than 50% of {from_token} balance on {chain} ({total_available_balance:.6f})")
 
         print("✅ Sanity check passed.")
         return True, None
 
+# In your kairos_autonomous_agent.py
+
     def _analyze_current_portfolio(self) -> Dict:
-        """Analyzes portfolio state and returns a structured dictionary."""
+        """
+        Analyzes portfolio state, fetches fresh prices, and returns a structured dictionary.
+        This is the single source of truth for the portfolio's state.
+        """
+        print("📡 Fetching and enriching portfolio...")
         try:
+            # This is the raw portfolio data from your API
             portfolio_raw = get_portfolio(user_id=self.user_id)
             
-            # ** FIX: Handle multiple possible structures for portfolio data **
             if isinstance(portfolio_raw, dict) and 'error' in portfolio_raw:
                 print(f"⚠️ Portfolio API error: {portfolio_raw.get('error')}")
                 return {"total_value": 0.0, "balances": [], "error": portfolio_raw.get('error')}
             
-            balances = []
-            total_value = 0.0
-            
-            if isinstance(portfolio_raw, dict):
-                balances = portfolio_raw.get('balances', [])
-                total_value = portfolio_raw.get('total_value', 0.0)
-            elif isinstance(portfolio_raw, list):
-                balances = portfolio_raw
+            balances = portfolio_raw.get('balances', []) if isinstance(portfolio_raw, dict) else portfolio_raw
                 
-            # Validate and clean balance data
             valid_balances = []
             calculated_total = 0.0
+            asset_count = 0
             
             if balances:
                 for balance in balances:
                     if isinstance(balance, dict):
-                        # Ensure required fields exist
-                        symbol = balance.get('symbol', 'UNKNOWN')
-                        amount = balance.get('amount', 0)
-                        usd_value = balance.get('usd_value', 0)
+                        symbol = balance.get('symbol')
                         
-                        try:
-                            amount_float = float(amount)
-                            usd_value_float = float(usd_value)
-                            
-                            if amount_float > 0:  # Only include tokens with positive balance
-                                valid_balance = {
-                                    'symbol': symbol,
-                                    'amount': amount_float,
-                                    'usd_value': usd_value_float
-                                }
-                                valid_balances.append(valid_balance)
-                                calculated_total += usd_value_float
-                                
-                        except (ValueError, TypeError):
+                        # FIX: Use 'specificChain' from the API response, not the generic 'chain'.
+                        chain = balance.get('specificChain', 'unknown')
+                        
+                        if not symbol or not chain or chain == 'unknown':
                             continue
-        
-            # Use calculated total if original was 0
-            if total_value == 0.0:
-                total_value = calculated_total
-                
-            print(f"💵 Calculated portfolio value: ${total_value:.2f}")
-            return {"total_value": total_value, "balances": valid_balances}
+
+                        try:
+                            amount_float = float(balance.get('amount', 0))
+                            if amount_float <= 0:
+                                continue
+
+                            # Fetch fresh price for each asset
+                            price_data = get_token_price_json(symbol, chain)
+                            price = 0.0
+                            if price_data and not price_data.get('error'):
+                                price = float(price_data.get('price', 0))
+                            
+                            usd_value_float = amount_float * price
+                            
+                            print(f"  💰 {symbol}: {amount_float:,.6f} (${usd_value_float:,.2f}) on {chain}")
+                            
+                            valid_balances.append({
+                                'symbol': symbol,
+                                'amount': amount_float,
+                                'usd_value': usd_value_float,   
+                                'chain': chain,
+                            })
+                            calculated_total += usd_value_float
+                            asset_count += 1
+                                
+                        except (ValueError, TypeError) as e:
+                            print(f"⚠️ Error processing balance for {symbol}: {e}")
+                            continue
+            
+            print(f"✅ Successfully enriched portfolio with {asset_count} assets. Total: ${calculated_total:,.2f}")
+            return {"total_value": calculated_total, "balances": valid_balances}
             
         except Exception as e:
             print(f"⚠️ Could not analyze portfolio: {e}")
             import traceback
             traceback.print_exc()
             return {"total_value": 0.0, "balances": [], "error": str(e)}
-
-    def _get_all_market_prices(self) -> Dict:
-        """Fetches prices for all tradable tokens."""
+    def _get_all_market_prices(self, portfolio: Dict) -> Dict:
+        """
+        Fetches prices ONLY for tokens currently held in the portfolio.
+        """
         prices = {}
-        for token in token_addresses.keys():
+        print("📊 Fetching real-time prices for portfolio assets...")
+        if not portfolio or not portfolio.get('balances'):
+            print("⚠️ No assets in portfolio to fetch prices for.")
+            return prices
+
+        for asset in portfolio['balances']:
+            symbol = asset.get('symbol')
+            chain = asset.get('chain')
+            if not symbol or not chain:
+                continue
+            
+            # Create a unique key in case a token exists on multiple chains
+            price_key = f"{symbol}" 
+            if price_key in prices: # Avoid re-fetching if already done
+                continue
+
             try:
-                price_data = get_token_price_json(token)
-                prices[token] = price_data.get('price', 0) if price_data else 0
-            except Exception:
-                prices[token] = 0
+                print(f"  -> Fetching price for {symbol} on {chain}...")
+                price_data = get_token_price_json(symbol, chain)
+                if price_data and not price_data.get('error'):
+                    prices[price_key] = price_data.get('price', 0)
+                else:
+                    print(f"⚠️ Could not get price for {symbol} on {chain}: {price_data.get('error', 'Unknown error')}")
+                    prices[price_key] = 0 # Ensure key exists even if price fails
+            except Exception as e:
+                print(f"❌ Exception fetching price for {symbol}: {e}")
+                prices[price_key] = 0
+        
+        print("✅ Market prices updated.")
         return prices

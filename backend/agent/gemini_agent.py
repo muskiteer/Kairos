@@ -15,6 +15,31 @@ from api.execute import token_addresses
 
 colorama.init()
 
+#!/usr/bin/env python3
+"""
+Powerful Gemini AI Trading Agent - Refactored for Autonomous Decision Making
+"""
+
+import os
+import json
+import google.generativeai as genai
+from dotenv import load_dotenv
+import colorama
+from colorama import Fore
+from typing import Optional, Dict, List
+
+# Assuming these are defined elsewhere and imported
+# from api.execute import token_addresses
+
+# Mocking for standalone execution
+token_addresses = {
+    'ETH': '0x...', 'USDC': '0x...', 'WETH': '0x...', 'WBTC': '0x...',
+    'SOL': '0x...', 'MATIC': '0x...', 'ARB': '0x...', 'OP': '0x...', 'USDbC': '0x...'
+}
+
+
+colorama.init()
+
 class PowerfulGeminiTradingAgent:
     """Advanced Gemini AI trading agent with full API access and intelligent analysis"""
 
@@ -43,7 +68,6 @@ class PowerfulGeminiTradingAgent:
         🧠 CORE KAIROS AI DECISION ENGINE 🧠
         Analyzes all available data and returns a structured trading decision.
         """
-        # ** FIX: Handle empty portfolio case immediately **
         total_value = portfolio_json.get('total_value', 0)
         balances = portfolio_json.get('balances', [])
         
@@ -53,7 +77,8 @@ class PowerfulGeminiTradingAgent:
                 "should_trade": False,
                 "confidence_score": 0.0,
                 "strategy_chosen": {"name": "hodl_empty_portfolio", "type": "hodl"},
-                "trade_params": {"trade_type": "swap", "from_token": "USDC", "to_token": "ETH", "amount": 0.0},
+                # ## CHANGE 1: Add default 'chain' to HODL case for schema consistency
+                "trade_params": {"trade_type": "swap", "from_token": "USDC", "to_token": "ETH", "amount": 0.0, "chain": "ETH"},
                 "reasoning": ["The current portfolio value is 0 and there are no balances available for trading.", "Therefore, the optimal decision is to HODL and wait for an opportunity to enter the market when funds become available."]
             }
         
@@ -91,37 +116,23 @@ class PowerfulGeminiTradingAgent:
         **🎯 YOUR TASK: FORMULATE THE NEXT TRADE**
 
         **IMPORTANT MULTI-CHAIN PORTFOLIO RULES:**
-        - The portfolio contains tokens on multiple chains (ETH, Polygon, Arbitrum, Optimism, Base, Solana)
-        - When calculating trade amounts, consider ONLY the balance of the SPECIFIC token on the SAME chain
-        - Do NOT aggregate balances across chains - treat each chain separately
-        - Available tokens per chain:
-          * ETH chain: ETH, USDC, WETH, WBTC
-          * Solana (svm): SOL, USDC
-          * Polygon: USDC, MATIC
-          * Arbitrum: USDC, ARB
-          * Optimism: USDC, OP
-          * Base: USDbC
+        - The portfolio contains tokens on multiple chains (e.g., 'ETH', 'Polygon', 'Solana').
+        - When deciding a trade, you MUST specify the `chain` for the `from_token`.
+        - Do NOT aggregate balances across different chains. A trade can only happen on one chain.
 
         **Constraint Checklist (MUST FOLLOW):**
         1.  `trade_type`: MUST be one of {allowed_trade_types}.
         2.  `strategy_type`: MUST be one of {allowed_strategy_types}.
         3.  `from_token` & `to_token`: MUST be chosen from this list: {available_tokens}.
-        4.  `amount`: MUST be a positive float number greater than 0.
-        5.  `amount`: MUST be ≤ the available balance for that specific token on that specific chain.
+        4.  `amount`: MUST be a positive float number > 0 for a trade, or 0.0 for a HODL.
+        5.  `amount`: MUST be ≤ the available balance for the `from_token` on its specific `chain`.
+        6.  `chain`: MUST be the specific blockchain network for the `from_token` (e.g., 'ETH', 'Solana', 'Polygon'). This is MANDATORY.
 
         **Decision Guidelines:**
         - **Critical Rule**: If portfolio `total_value` is 0 or the balance of a potential `from_token` is 0, you MUST decide to HODL. Set `should_trade` to false.
-        - **Risk Management**: Never trade more than 25% of any single token balance in one transaction.
-        - **Chain Awareness**: Only trade tokens that exist on the same blockchain.
-        - **Simple Math**: Calculate trade amounts using simple arithmetic. Do NOT use recursive division or complex calculations.
-        
-        **Example Reasoning Format:**
-        1. Analyze portfolio: Total value $X, main holdings are Y
-        2. Check market conditions: Token Z is showing W trend
-        3. Select strategy: [strategy_name] because [clear reason]
-        4. Calculate trade: Take 10-25% of [specific_token] balance = [simple_calculation]
-        5. Execute decision
-        - **Dynamic Sizing**: Calculate the trade `amount` based on confidence and risk. A confident trade might use 5-10% of the available `from_token` balance.
+        - **Risk Management**: Never trade more than 25% of any single token's balance (on a specific chain) in one transaction.
+        - **Chain Awareness**: Only trade tokens that exist on the same blockchain. Your `trade_params` must reflect this.
+        - **Dynamic Sizing**: Calculate the trade `amount` based on confidence and risk. A confident trade might use 5-25% of the available `from_token` balance.
         - **Learning from Memory**: Prioritize strategies with a high `success_rate` from your historical performance.
 
         **REQUIRED OUTPUT FORMAT (Strict JSON):**
@@ -135,18 +146,20 @@ class PowerfulGeminiTradingAgent:
           "trade_params": {{
             "trade_type": "one_of_{allowed_trade_types}",
             "from_token": "token_from_available_list",
-            "to_token": "token_from_available_list", 
-            "amount": "float_amount"
+            "to_token": "token_from_available_list",
+            "amount": "float_amount",
+            "chain": "the_blockchain_network_for_the_trade"
           }},
           "reasoning": [
-            "A step-by-step explanation of your thought process, referencing specific data points."
+            "A step-by-step explanation of your thought process, referencing specific data points and the chosen chain."
           ]
         }}
 
-        If you decide to HODL, set "should_trade" to false, "trade_type" to "swap", "from_token" to "USDC", "to_token" to "ETH", "amount" to 0.0, and explain why in "reasoning". This ensures data consistency.
+        If you decide to HODL, set "should_trade" to false, "trade_type" to "swap", "from_token" to "USDC", "to_token" to "ETH", "amount" to 0.0, "chain" to "ETH", and explain why in "reasoning".
         """
 
         try:
+            # I removed the print() statements from the f-string for cleaner execution
             print(f"{Fore.MAGENTA}🧠 Kairos AI: Analyzing market data and portfolio state...{Fore.RESET}")
             response = self.model.generate_content(master_prompt)
             decision = json.loads(response.text)
@@ -166,7 +179,8 @@ class PowerfulGeminiTradingAgent:
                 "confidence_score": 0.0,
                 "strategy_chosen": {"name": "system_error", "type": "custom"},
                 "reasoning": [f"An error occurred during AI analysis: {str(e)}", "Defaulting to HODL for safety."],
-                "trade_params": {"trade_type": "swap", "from_token": "USDC", "to_token": "ETH", "amount": 0.0}
+                # ## CHANGE 3: Add default 'chain' to error case for schema consistency
+                "trade_params": {"trade_type": "swap", "from_token": "USDC", "to_token": "ETH", "amount": 0.0, "chain": "ETH"}
             }
 
 # Keep old name for compatibility
