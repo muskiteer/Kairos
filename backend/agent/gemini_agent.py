@@ -987,6 +987,152 @@ Keep it concise and supportive."""
                 print(f"\n{Fore.RED}❌ Unexpected error: {str(e)}{Style.RESET_ALL}")
                 print(f"{Fore.YELLOW}💡 Please try again or type 'help' for assistance.{Style.RESET_ALL}")
 
+    def get_intelligent_analysis(self, portfolio_json: dict, market_prices_json: dict, news_json: dict, strategy_performance_json: dict) -> dict:
+        """
+        🧠 CORE KAIROS AI DECISION ENGINE 🧠
+        Analyzes all available data and returns a structured trading decision.
+        This is the heart of the autonomous trading agent.
+        """
+        master_prompt = f"""
+You are Kairos AI, an expert quantitative and qualitative cryptocurrency trading analyst. Your primary directive is to maximize portfolio value through intelligent, risk-managed trades. 
+
+Analyze the following real-time data packet to formulate a single, optimal trading decision.
+
+**🔹 PORTFOLIO STATE:**
+```json
+{json.dumps(portfolio_json, indent=2)}
+```
+
+**🔹 REAL-TIME MARKET PRICES:**
+```json
+{json.dumps(market_prices_json, indent=2)}
+```
+
+**🔹 LATEST CRYPTO NEWS & SENTIMENT:**
+```json
+{json.dumps(news_json, indent=2)}
+```
+
+**🔹 HISTORICAL STRATEGY PERFORMANCE:**
+```json
+{json.dumps(strategy_performance_json, indent=2)}
+```
+
+**🎯 YOUR TASK: INTELLIGENT DECISION FORMULATION**
+
+Based on comprehensive analysis of all data above:
+
+1. **Strategy Selection**: Choose the most appropriate strategy based on current conditions
+2. **Trade Decision**: Decide to BUY, SELL, or HODL
+3. **Dynamic Sizing**: Determine trade size (1-5% of portfolio) based on confidence level
+4. **Risk Assessment**: Evaluate and mitigate potential risks
+5. **Detailed Reasoning**: Provide step-by-step analysis referencing specific data points
+
+**DECISION GUIDELINES:**
+- If news sentiment is bullish (>0.6) for an underweight asset → Consider BUY
+- If news sentiment is bearish (<-0.4) for an overweight asset → Consider SELL  
+- If strategy win_rate > 0.7 → Favor that strategy
+- If strategy win_rate < 0.4 → Avoid that strategy
+- Higher confidence → Larger trade size (up to 5%)
+- Lower confidence → Smaller trade size (1-2%)
+
+**REQUIRED OUTPUT FORMAT:**
+Return ONLY a valid JSON object with this exact structure:
+
+{{
+  "should_trade": true,
+  "confidence_score": 0.85,
+  "strategy_chosen": {{
+    "name": "bullish_eth_accumulation",
+    "type": "momentum",
+    "parameters": {{
+      "target_allocation": 0.3,
+      "risk_level": "medium"
+    }}
+  }},
+  "trade_params": {{
+    "trade_type": "buy",
+    "from_token": "USDC", 
+    "to_token": "ETH",
+    "amount_usd": 500.0,
+    "from_amount": 500.0,
+    "expected_to_amount": 0.14
+  }},
+  "reasoning": [
+    "ETH news sentiment is strongly bullish (0.8) due to upcoming ETF approvals",
+    "Portfolio is underweight ETH at 15% vs target 30%",
+    "Historical 'bullish_momentum' strategy shows 75% win rate",
+    "High confidence trade warrants 5% portfolio allocation"
+  ],
+  "risk_assessment": {{
+    "level": "medium",
+    "factors": ["Market volatility", "News reliability"],
+    "mitigation": "Trade size capped at 5% of portfolio to limit downside exposure"
+  }},
+  "market_analysis": {{
+    "sentiment_score": 0.8,
+    "trend_direction": "bullish",
+    "volatility_level": "moderate"
+  }}
+}}
+
+If you decide NOT to trade, set "should_trade" to false and explain why in "reasoning".
+
+CRITICAL: Return ONLY the JSON object. No additional text or explanations outside the JSON.
+"""
+        
+        try:
+            print(f"{Fore.MAGENTA}🧠 Kairos AI: Analyzing market data and portfolio state...{Style.RESET_ALL}")
+            
+            # Send to Gemini for analysis
+            response = self.model.generate_content(master_prompt)
+            
+            # Clean and parse JSON response
+            json_text = response.text.strip()
+            # Remove any markdown formatting
+            json_text = json_text.replace('```json', '').replace('```', '').strip()
+            
+            try:
+                decision = json.loads(json_text)
+                strategy_name = decision.get('strategy_chosen', {}).get('name', 'Unknown')
+                confidence = decision.get('confidence_score', 0) * 100
+                
+                print(f"{Fore.GREEN}✅ Kairos AI Decision: {strategy_name} (Confidence: {confidence:.1f}%){Style.RESET_ALL}")
+                
+                # Log the reasoning
+                reasoning = decision.get('reasoning', [])
+                if reasoning:
+                    print(f"{Fore.CYAN}🤔 AI Reasoning:{Style.RESET_ALL}")
+                    for i, reason in enumerate(reasoning, 1):
+                        print(f"   {i}. {reason}")
+                
+                return decision
+                
+            except json.JSONDecodeError as e:
+                print(f"{Fore.RED}❌ JSON Parse Error: {e}{Style.RESET_ALL}")
+                print(f"Raw response: {json_text[:500]}...")
+                
+                # Return safe fallback decision
+                return {
+                    "should_trade": False,
+                    "confidence_score": 0.0,
+                    "strategy_chosen": {"name": "json_parse_error", "type": "fallback"},
+                    "reasoning": [f"JSON parsing failed: {str(e)}", "Defaulting to HODL for safety"],
+                    "trade_params": None,
+                    "risk_assessment": {"level": "high", "mitigation": "System error - no trade executed"}
+                }
+                
+        except Exception as e:
+            print(f"{Fore.RED}❌ Kairos AI Analysis Error: {e}{Style.RESET_ALL}")
+            return {
+                "should_trade": False,
+                "confidence_score": 0.0,
+                "strategy_chosen": {"name": "system_error", "type": "fallback"},
+                "reasoning": [f"System error during analysis: {str(e)}", "Defaulting to HODL for safety"],
+                "trade_params": None,
+                "risk_assessment": {"level": "high", "mitigation": "System error - no trade executed"}
+            }
+
 
 # Keep the old class name for compatibility
 GeminiTradingAgent = PowerfulGeminiTradingAgent

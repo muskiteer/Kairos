@@ -128,24 +128,28 @@ class SupabaseClient:
             trade_pnl = post_portfolio_value - pre_portfolio_value
             trade_volume = float(trade_data.get("amount", 0))
             
+            # Enhance market_conditions with portfolio data
+            enhanced_market_conditions = trade_data.get("market_conditions", {})
+            enhanced_market_conditions.update({
+                "pre_trade_portfolio_value": pre_portfolio_value,
+                "post_trade_portfolio_value": post_portfolio_value,
+                "portfolio_pnl": trade_pnl,
+                "trade_volume_usd": trade_volume
+            })
+            
             trade_log = {
                 "id": str(uuid.uuid4()),
                 "session_id": session_id,
-                "timestamp": datetime.utcnow().isoformat(),
                 "trade_type": trade_data.get("trade_type", "swap"),
                 "from_token": trade_data.get("from_token"),
                 "to_token": trade_data.get("to_token"),
                 "from_amount": float(trade_data.get("amount", 0)),
-                "to_amount": float(trade_data.get("to_amount", 0)),
-                "price": float(trade_data.get("price", 0)),
+                "to_amount": float(trade_data.get("to_amount", 0)) if trade_data.get("to_amount", 0) > 0 else None,
+                "price": float(trade_data.get("price", 0)) if trade_data.get("price", 0) > 0 else None,
                 "ai_reasoning": reasoning,
                 "ai_confidence": float(trade_data.get("confidence", 0.5)),
-                "market_conditions": trade_data.get("market_conditions", {}),
+                "market_conditions": enhanced_market_conditions,
                 "status": "executed" if trade_data.get("success", False) else "failed",
-                "profit_loss": trade_pnl,
-                "trade_value_usd": trade_volume,
-                "pre_trade_portfolio": pre_portfolio_value,
-                "post_trade_portfolio": post_portfolio_value,
                 "execution_time": datetime.utcnow().isoformat(),
                 "created_at": datetime.utcnow().isoformat()
             }
@@ -265,6 +269,38 @@ class SupabaseClient:
         except Exception as e:
             print(f"⚠️ Error inserting strategy: {e}")
             return {}
+    
+    def upsert_strategy(self, session_id: str, strategy_name: str) -> str:
+        """Upsert a strategy (create if doesn't exist, return ID)"""
+        try:
+            # First try to find existing strategy
+            existing = self.client.table("ai_strategies").select("id").eq("session_id", session_id).eq("strategy_name", strategy_name).limit(1).execute()
+            
+            if existing.data:
+                return existing.data[0]["id"]
+            
+            # Create new strategy
+            new_strategy_data = {
+                "id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "strategy_name": strategy_name,
+                "strategy_type": "ai_generated",
+                "strategy_description": f"AI-generated strategy: {strategy_name}",
+                "strategy_parameters": {"auto_generated": True},
+                "performance_metrics": {"usage_count": 0},
+                "market_conditions": {},
+                "risk_assessment": {},
+                "success_rate": 0.5,
+                "is_active": True,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            result = self.client.table("ai_strategies").insert(new_strategy_data).execute()
+            return result.data[0]["id"] if result.data else str(uuid.uuid4())
+            
+        except Exception as e:
+            print(f"⚠️ Error upserting strategy: {e}")
+            return str(uuid.uuid4())  # Fallback ID
         
 
     # Add these methods to the SupabaseClient class (around line 180, before update_strategy_performance):

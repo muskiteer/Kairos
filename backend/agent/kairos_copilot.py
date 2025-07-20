@@ -50,6 +50,15 @@ class KairosTradingCopilot:
             )
         )
         
+        # Initialize Gemini Agent for autonomous decision making
+        try:
+            from agent.gemini_agent import PowerfulGeminiTradingAgent
+            self.gemini_agent = PowerfulGeminiTradingAgent(user_id=self.user_id, gemini_api_key=api_key)
+            print("✅ POWERFUL Gemini AI Trading Agent initialized with FULL CAPABILITIES")
+        except Exception as e:
+            print(f"⚠️ Could not initialize Gemini agent: {e}")
+            self.gemini_agent = None
+        
         # Initialize session
         self.current_session = None
         self.conversation_history = []
