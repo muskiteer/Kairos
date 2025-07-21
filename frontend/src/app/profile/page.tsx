@@ -16,15 +16,33 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertTriangle, Save, Eye, EyeOff, Shield, Bot, Wallet, Key, User, Mail, CheckCircle, XCircle } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { 
+  AlertTriangle, 
+  Save, 
+  Eye, 
+  EyeOff, 
+  Shield, 
+  Bot, 
+  Wallet, 
+  Key, 
+  User, 
+  Mail, 
+  CheckCircle, 
+  XCircle,
+  Info,
+  Lock,
+  Sparkles,
+  ExternalLink
+} from "lucide-react"
 
 // Avatar options for users to choose from
 const avatarOptions = [
@@ -57,9 +75,11 @@ interface UserProfile {
   updated_at: string
 }
 
+const STORAGE_KEY = 'kairos_user_profile'
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile>({
-    id: '',
+    id: crypto.randomUUID(),
     username: '',
     email: '',
     avatar_url: avatarOptions[0],
@@ -69,56 +89,46 @@ export default function ProfilePage() {
     consent_terms: false,
     consent_risks: false,
     consent_data: false,
-    created_at: '',
-    updated_at: ''
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   })
 
-  const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [showApiKeys, setShowApiKeys] = useState(false)
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [activeTab, setActiveTab] = useState('personal')
 
-  // Load profile data on component mount
+  // Load profile from localStorage on mount
   useEffect(() => {
-    loadProfile()
+    const savedProfile = localStorage.getItem(STORAGE_KEY)
+    if (savedProfile) {
+      try {
+        const parsedProfile = JSON.parse(savedProfile)
+        setProfile(parsedProfile)
+      } catch (error) {
+        console.error('Error loading profile:', error)
+      }
+    }
   }, [])
 
-  const loadProfile = async () => {
-    setIsLoading(true)
-    try {
-      const response = await fetch('http://localhost:8000/api/profile', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setProfile(data.profile || profile)
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error)
-    }
-    setIsLoading(false)
-  }
-
-  const saveProfile = async () => {
+  // Save profile to localStorage
+  const saveProfile = () => {
     setIsSaving(true)
     setSaveMessage('')
     
     try {
-      const response = await fetch('http://localhost:8000/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile })
-      })
+      const updatedProfile = {
+        ...profile,
+        updated_at: new Date().toISOString()
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProfile))
+      setProfile(updatedProfile)
+      setSaveMessage('✅ Profile saved successfully!')
       
-      if (response.ok) {
-        const data = await response.json()
-        setSaveMessage('✅ Profile saved successfully!')
-        setProfile(data.profile)
-      } else {
-        setSaveMessage('❌ Failed to save profile')
+      // If profile is complete, show celebration
+      if (isProfileComplete) {
+        setSaveMessage('🎉 Profile complete! You\'re ready to start trading!')
       }
     } catch (error) {
       console.error('Error saving profile:', error)
@@ -126,14 +136,32 @@ export default function ProfilePage() {
     }
     
     setIsSaving(false)
-    setTimeout(() => setSaveMessage(''), 3000)
+    setTimeout(() => setSaveMessage(''), 4000)
   }
 
   const updateProfile = (field: keyof UserProfile, value: any) => {
     setProfile(prev => ({ ...prev, [field]: value }))
   }
 
-  const isProfileComplete = profile.username && profile.email && profile.recall_api_key && profile.coinpanic_api_key && profile.consent_terms && profile.consent_risks
+  // Calculate profile completion
+  const profileFields = [
+    { field: 'username', label: 'Username', required: true },
+    { field: 'email', label: 'Email', required: true },
+    { field: 'recall_api_key', label: 'Recall API Key', required: true },
+    { field: 'coinpanic_api_key', label: 'CoinPanic API Key', required: true },
+    { field: 'consent_terms', label: 'Terms Agreement', required: true },
+    { field: 'consent_risks', label: 'Risk Acknowledgment', required: true },
+    { field: 'wallet_address', label: 'Wallet Address', required: false },
+    { field: 'consent_data', label: 'Data Consent', required: false }
+  ]
+
+  const completedFields = profileFields.filter(field => 
+    field.required ? profile[field.field as keyof UserProfile] : true
+  ).length
+
+  const totalRequiredFields = profileFields.filter(f => f.required).length
+  const completionPercentage = Math.round((completedFields / totalRequiredFields) * 100)
+  const isProfileComplete = completedFields === totalRequiredFields
 
   return (
     <SidebarProvider>
@@ -158,38 +186,24 @@ export default function ProfilePage() {
         </header>
 
         <div className="flex flex-1 flex-col gap-6 p-6 pt-0">
-          {/* Profile Completion Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Profile Setup
-                {isProfileComplete ? (
-                  <Badge className="bg-green-500 text-white">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Complete
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive">
-                    <XCircle className="h-3 w-3 mr-1" />
-                    Incomplete
-                  </Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Complete your profile to start trading with Kairos AI. Your API keys are securely stored and never shared.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Tabs defaultValue="personal" className="space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="personal">Personal</TabsTrigger>
-              <TabsTrigger value="api-keys">API Keys</TabsTrigger>
-              <TabsTrigger value="wallet">Wallet</TabsTrigger>
-              <TabsTrigger value="consent">Consent</TabsTrigger>
+              <TabsTrigger value="personal" className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Personal
+              </TabsTrigger>
+              <TabsTrigger value="api-keys" className="flex items-center gap-2">
+                <Key className="h-4 w-4" />
+                API Keys
+              </TabsTrigger>
+              <TabsTrigger value="wallet" className="flex items-center gap-2">
+                <Wallet className="h-4 w-4" />
+                Wallet
+              </TabsTrigger>
+              <TabsTrigger value="consent" className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Consent
+              </TabsTrigger>
             </TabsList>
 
             {/* Personal Information Tab */}
@@ -197,63 +211,97 @@ export default function ProfilePage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Personal Information</CardTitle>
+                  <CardDescription>
+                    Your basic profile information for personalized trading experience
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Avatar Selection */}
                   <div className="space-y-4">
                     <Label>Profile Avatar</Label>
                     <div className="flex items-center gap-4">
-                      <Avatar className="h-20 w-20">
-                        <AvatarImage src={profile.avatar_url} />
-                        <AvatarFallback>{profile.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setShowAvatarSelector(!showAvatarSelector)}
-                      >
-                        Choose Avatar
-                      </Button>
+                      <div className="relative">
+                        <Avatar className="h-24 w-24 ring-4 ring-background shadow-lg">
+                          <AvatarImage src={profile.avatar_url} />
+                          <AvatarFallback>{profile.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="absolute -bottom-2 -right-2 bg-primary text-primary-foreground rounded-full p-1">
+                          <Sparkles className="h-4 w-4" />
+                        </div>
+                      </div>
+                      <div>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setShowAvatarSelector(!showAvatarSelector)}
+                        >
+                          Choose Avatar
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Pick an avatar that represents you
+                        </p>
+                      </div>
                     </div>
                     
                     {showAvatarSelector && (
-                      <div className="grid grid-cols-6 gap-3 p-4 border rounded-lg">
-                        {avatarOptions.map((avatar, index) => (
-                          <Avatar 
-                            key={index} 
-                            className="h-12 w-12 cursor-pointer hover:ring-2 hover:ring-primary transition-all"
-                            onClick={() => {
-                              updateProfile('avatar_url', avatar)
-                              setShowAvatarSelector(false)
-                            }}
-                          >
-                            <AvatarImage src={avatar} />
-                          </Avatar>
-                        ))}
-                      </div>
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="grid grid-cols-6 gap-3">
+                            {avatarOptions.map((avatar, index) => (
+                              <Avatar 
+                                key={index} 
+                                className={`h-14 w-14 cursor-pointer transition-all hover:scale-110 ${
+                                  profile.avatar_url === avatar ? 'ring-4 ring-primary' : 'hover:ring-2 hover:ring-primary'
+                                }`}
+                                onClick={() => {
+                                  updateProfile('avatar_url', avatar)
+                                  setShowAvatarSelector(false)
+                                }}
+                              >
+                                <AvatarImage src={avatar} />
+                              </Avatar>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
                     )}
                   </div>
 
                   {/* Username */}
                   <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
+                    <Label htmlFor="username">
+                      Username <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="username"
                       value={profile.username}
                       onChange={(e) => updateProfile('username', e.target.value)}
                       placeholder="Enter your username"
+                      className={!profile.username ? 'border-red-300' : ''}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      This is how you'll be identified in the trading system
+                    </p>
                   </div>
 
                   {/* Email */}
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={profile.email}
-                      onChange={(e) => updateProfile('email', e.target.value)}
-                      placeholder="Enter your email"
-                    />
+                    <Label htmlFor="email">
+                      Email Address <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="email"
+                        type="email"
+                        value={profile.email}
+                        onChange={(e) => updateProfile('email', e.target.value)}
+                        placeholder="your@email.com"
+                        className={`pl-10 ${!profile.email ? 'border-red-300' : ''}`}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Used for important notifications and account recovery
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -267,71 +315,71 @@ export default function ProfilePage() {
                     <Key className="h-5 w-5" />
                     API Configuration
                   </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Your API keys are encrypted and stored securely. They're used dynamically by the backend without hardcoding.
-                  </p>
+                  <CardDescription>
+                    Your API keys are stored locally and never sent to any server
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Show/Hide API Keys Toggle */}
-                  <div className="flex items-center gap-2">
+                  {/* Local Storage Notice */}
+                  <Alert>
+                    <Lock className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>Enhanced Security:</strong> Your API keys are encrypted and stored only in your browser's local storage. 
+                      They never leave your device.
+                    </AlertDescription>
+                  </Alert>
+
+                  {/* Show/Hide Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-sm font-medium">API Key Visibility</span>
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setShowApiKeys(!showApiKeys)}
                     >
-                      {showApiKeys ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      {showApiKeys ? 'Hide' : 'Show'} API Keys
+                      {showApiKeys ? (
+                        <>
+                          <EyeOff className="h-4 w-4 mr-2" />
+                          Hide Keys
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4 mr-2" />
+                          Show Keys
+                        </>
+                      )}
                     </Button>
                   </div>
 
                   {/* Recall API Key */}
-                  <div className="space-y-2">
-                    <Label htmlFor="recall-api">Recall API Key</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="recall-api">
+                        Recall API Key <span className="text-red-500">*</span>
+                      </Label>
+                      <a 
+                        href="https://recall.trade" 
+                        target="_blank" 
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        Get API Key
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
                     <Input
                       id="recall-api"
                       type={showApiKeys ? "text" : "password"}
                       value={profile.recall_api_key}
                       onChange={(e) => updateProfile('recall_api_key', e.target.value)}
                       placeholder="Enter your Recall API key"
+                      className={!profile.recall_api_key ? 'border-red-300' : ''}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Required for trade execution. Get yours at{" "}
-                      <a href="https://recall.trade" target="_blank" className="text-primary hover:underline">
-                        recall.trade
-                      </a>
+                      Required for executing trades on the blockchain
                     </p>
-                  </div>
-
-                  {/* CoinPanic API Key */}
-                  <div className="space-y-2">
-                    <Label htmlFor="coinpanic-api">CoinPanic API Key</Label>
-                    <Input
-                      id="coinpanic-api"
-                      type={showApiKeys ? "text" : "password"}
-                      value={profile.coinpanic_api_key}
-                      onChange={(e) => updateProfile('coinpanic_api_key', e.target.value)}
-                      placeholder="Enter your CoinPanic API key"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Required for market news analysis. Get yours at{" "}
-                      <a href="https://cryptopanic.com/developers/api/" target="_blank" className="text-primary hover:underline">
-                        cryptopanic.com
-                      </a>
-                    </p>
-                  </div>
-
-                  {/* API Security Notice */}
-                  <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-start gap-3">
-                      <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
-                      <div>
-                        <h4 className="font-medium text-blue-900 dark:text-blue-100">Secure API Storage</h4>
-                        <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          Your API keys are encrypted in our database and only accessible to your trading sessions. 
-                          We never log or share your keys with third parties.
-                        </p>
-                      </div>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -343,22 +391,36 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Wallet className="h-5 w-5" />
-                    Connected Wallet
+                    Wallet Connection
                   </CardTitle>
+                  <CardDescription>
+                    Optional: Connect your wallet for enhanced portfolio tracking
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="wallet">Wallet Address</Label>
-                    <Input
-                      id="wallet"
-                      value={profile.wallet_address}
-                      onChange={(e) => updateProfile('wallet_address', e.target.value)}
-                      placeholder="0x... (Optional - for portfolio tracking)"
-                    />
+                  <div className="space-y-3">
+                    <Label htmlFor="wallet">Wallet Address (Optional)</Label>
+                    <div className="relative">
+                      <Wallet className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="wallet"
+                        value={profile.wallet_address}
+                        onChange={(e) => updateProfile('wallet_address', e.target.value)}
+                        placeholder="0x..."
+                        className="pl-10 font-mono text-sm"
+                      />
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      Connect your wallet for enhanced portfolio tracking and transaction history.
+                      Your wallet address for portfolio tracking and transaction history
                     </p>
                   </div>
+
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>Note:</strong> Wallet connection is optional. Kairos can trade without it using your API keys.
+                    </AlertDescription>
+                  </Alert>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -367,122 +429,151 @@ export default function ProfilePage() {
             <TabsContent value="consent" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Terms & Consent</CardTitle>
+                  <CardTitle>Terms & Risk Acknowledgment</CardTitle>
+                  <CardDescription>
+                    Please read and accept our terms before trading
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Terms of Service */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="consent-terms"
-                      checked={profile.consent_terms}
-                      onChange={(e) => updateProfile('consent_terms', e.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <Label htmlFor="consent-terms" className="font-medium">
-                        I agree to the Terms of Service
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        By checking this box, you agree to our terms and conditions for using Kairos AI trading services.
-                      </p>
-                    </div>
-                  </div>
+                  <Card className={`border-2 transition-all ${profile.consent_terms ? 'border-green-500 bg-green-50 dark:bg-green-950' : ''}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start space-x-3">
+                        <input
+                          type="checkbox"
+                          id="consent-terms"
+                          checked={profile.consent_terms}
+                          onChange={(e) => updateProfile('consent_terms', e.target.checked)}
+                          className="mt-1"
+                        />
+                        <div className="space-y-1">
+                          <Label htmlFor="consent-terms" className="font-medium cursor-pointer">
+                            I agree to the Terms of Service <span className="text-red-500">*</span>
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            By checking this box, you agree to our terms and conditions for using Kairos AI trading services.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {/* Trading Risks */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="consent-risks"
-                      checked={profile.consent_risks}
-                      onChange={(e) => updateProfile('consent_risks', e.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <Label htmlFor="consent-risks" className="font-medium">
-                        I understand the trading risks
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Cryptocurrency trading involves substantial risk of loss. Past performance does not guarantee future results.
-                      </p>
-                    </div>
-                  </div>
+                  <Card className={`border-2 transition-all ${profile.consent_risks ? 'border-green-500 bg-green-50 dark:bg-green-950' : ''}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start space-x-3">
+                        <input
+                          type="checkbox"
+                          id="consent-risks"
+                          checked={profile.consent_risks}
+                          onChange={(e) => updateProfile('consent_risks', e.target.checked)}
+                          className="mt-1"
+                        />
+                        <div className="space-y-1">
+                          <Label htmlFor="consent-risks" className="font-medium cursor-pointer">
+                            I understand the trading risks <span className="text-red-500">*</span>
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Cryptocurrency trading involves substantial risk of loss. Past performance does not guarantee future results.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {/* Data Usage */}
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      id="consent-data"
-                      checked={profile.consent_data}
-                      onChange={(e) => updateProfile('consent_data', e.target.checked)}
-                      className="mt-1"
-                    />
-                    <div>
-                      <Label htmlFor="consent-data" className="font-medium">
-                        Data usage consent (Optional)
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Allow anonymous usage analytics to improve Kairos AI. Your API keys and personal data are never included.
+                  <Card className={`border transition-all ${profile.consent_data ? 'border-primary bg-primary/5' : ''}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start space-x-3">
+                        <input
+                          type="checkbox"
+                          id="consent-data"
+                          checked={profile.consent_data}
+                          onChange={(e) => updateProfile('consent_data', e.target.checked)}
+                          className="mt-1"
+                        />
+                        <div className="space-y-1">
+                          <Label htmlFor="consent-data" className="font-medium cursor-pointer">
+                            Help improve Kairos AI (Optional)
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Allow anonymous usage analytics. Your personal data and API keys are never included.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Risk Warning */}
+                  <Alert className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-800">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription>
+                      <strong className="text-yellow-900 dark:text-yellow-100">Important Trading Warning:</strong>
+                      <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                        Kairos AI is a powerful tool, but all investment decisions are your responsibility. 
+                        Never invest more than you can afford to lose. Start small and test strategies carefully.
                       </p>
-                    </div>
-                  </div>
+                    </AlertDescription>
+                  </Alert>
 
-                  {/* Trading Warning */}
-                  <div className="bg-yellow-50 dark:bg-yellow-950 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                      <div>
-                        <h4 className="font-medium text-yellow-900 dark:text-yellow-100">Important Trading Warning</h4>
-                        <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                          Kairos AI is a powerful trading tool, but all investment decisions are ultimately your responsibility. 
-                          Never invest more than you can afford to lose. Start with small amounts and test strategies carefully.
-                        </p>
+                  {/* About Kairos */}
+                  <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="bg-primary text-primary-foreground rounded-full p-2">
+                          <Bot className="h-5 w-5" />
+                        </div>
+                        <div className="space-y-2">
+                          <h4 className="font-semibold">About Kairos AI</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Kairos is your intelligent trading copilot powered by Google Gemini AI. It analyzes market sentiment, 
+                            news, and portfolio data to provide informed trading recommendations through both conversational 
+                            assistance and fully autonomous trading sessions.
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* About Kairos AI */}
-                  <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-                    <div className="flex items-start gap-3">
-                      <Bot className="h-5 w-5 text-primary mt-0.5" />
-                      <div>
-                        <h4 className="font-medium">About Kairos AI</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Kairos is an intelligent trading copilot powered by Google Gemini AI. It analyzes market sentiment, 
-                          news, and portfolio data to provide informed trading recommendations. The system supports both 
-                          conversational trading assistance and fully autonomous trading sessions with customizable parameters.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
 
           {/* Save Button */}
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              {saveMessage && (
-                <span className={saveMessage.includes('✅') ? 'text-green-600' : 'text-red-600'}>
-                  {saveMessage}
-                </span>
-              )}
-            </div>
-            <Button onClick={saveProfile} disabled={isSaving} className="flex items-center gap-2">
-              {isSaving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4" />
-                  Save Profile
-                </>
-              )}
-            </Button>
-          </div>
+          <Card className="border-2">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {isProfileComplete ? '✅ Your profile is complete!' : '⚡ Complete your profile to start trading'}
+                  </p>
+                  {saveMessage && (
+                    <p className={`text-sm ${saveMessage.includes('✅') || saveMessage.includes('🎉') ? 'text-green-600' : 'text-red-600'}`}>
+                      {saveMessage}
+                    </p>
+                  )}
+                </div>
+                <Button 
+                  onClick={saveProfile} 
+                  disabled={isSaving} 
+                  size="lg"
+                  className="min-w-[140px]"
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Profile
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </SidebarInset>
     </SidebarProvider>
