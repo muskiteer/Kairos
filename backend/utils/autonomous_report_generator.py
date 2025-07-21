@@ -699,7 +699,6 @@ class EnhancedAutonomousReportGenerator:
         and a <b>{success_rate:.1f}% success rate</b>. The AI demonstrated 
         <b>{'strong' if success_rate > 70 else 'moderate' if success_rate > 50 else 'learning-focused'}</b> 
         performance with a total P&L of <b>${total_pnl:+,.4f}</b>.<br/><br/>
-        
         <b>🔍 KEY FINDINGS:</b><br/><br/>
         
         • <b>AI Decision Quality:</b> {'Excellent' if success_rate > 80 else 'Good' if success_rate > 60 else 'Developing'} 

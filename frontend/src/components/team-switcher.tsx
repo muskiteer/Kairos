@@ -2,17 +2,21 @@
 
 import * as React from "react"
 import { Bot } from "lucide-react"
-import { ModeToggle } from "@/components/mode-toggle";
+import { ModeToggle } from "@/components/mode-toggle"
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 
 export function TeamSwitcher() {
+  const { state } = useSidebar()
+  const isCollapsed = state === "collapsed"
+
   return (
     <SidebarMenu>
-       <SidebarMenuItem>
+      <SidebarMenuItem>
         <SidebarMenuButton size="lg" className="cursor-default">
           <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
             <Bot className="size-4" />
@@ -21,7 +25,8 @@ export function TeamSwitcher() {
             <span className="truncate font-medium">Kairos</span>
             <span className="truncate text-xs">Trading Assistant</span>
           </div>
-          <div>
+          {/* Only show ModeToggle when sidebar is expanded */}
+          <div className={`transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
             <ModeToggle />
           </div>
         </SidebarMenuButton>
