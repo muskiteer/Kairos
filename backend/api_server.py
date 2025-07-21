@@ -26,7 +26,7 @@ try:
     from database.supabase_client import supabase_client
     from api.portfolio import get_portfolio
     from api.execute import trade_exec, token_addresses
-    from reports.autonomous_report_generator import generate_autonomous_session_report
+    from utils.autonomous_report_generator import generate_autonomous_session_report
 except ImportError as e:
     print(f"⚠️ Import warning: {e}")
     print("Some features may not be available")
