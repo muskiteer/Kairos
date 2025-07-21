@@ -89,13 +89,14 @@ interface TradingSession {
 type AIMode = 'agent' | 'assistant'
 
 const DURATION_OPTIONS = {
+  '5': { text: '5 minutes', minutes: 5 },
   '10': { text: '10 minutes', minutes: 10 },
+  '15': { text: '15 minutes', minutes: 15 },
   '30': { text: '30 minutes', minutes: 30 },
   '60': { text: '1 hour', minutes: 60 },
   '120': { text: '2 hours', minutes: 120 },
   '300': { text: '5 hours', minutes: 300 },
-  '720': { text: '12 hours', minutes: 720 },
-  '1440': { text: '24 hours', minutes: 1440 }
+  '720': { text: '12 hours', minutes: 720 }
 }
 
 export default function AIAgentPage() {
@@ -114,6 +115,7 @@ export default function AIAgentPage() {
   const [currentSession, setCurrentSession] = useState<TradingSession | null>(null)
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false)
   const [sessionPolling, setSessionPolling] = useState<NodeJS.Timeout | null>(null)
+  const [pollingCount, setPollingCount] = useState(0)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -126,20 +128,32 @@ export default function AIAgentPage() {
     scrollToBottom()
   }, [messages])
 
-  // Session status polling
+  // Enhanced session status polling with retry logic
   useEffect(() => {
     if (currentSession?.status === 'active' && currentSession.sessionId) {
-      const interval = setInterval(() => {
-        checkSessionStatus(currentSession.sessionId)
-      }, 10000) // Check every 10 seconds
+      console.log(`🔄 Starting polling for session: ${currentSession.sessionId}`)
+      
+      const interval = setInterval(async () => {
+        try {
+          setPollingCount(prev => prev + 1)
+          await checkSessionStatus(currentSession.sessionId)
+        } catch (error) {
+          console.error('Polling error:', error)
+        }
+      }, 5000) // Check every 5 seconds for faster updates
+      
       setSessionPolling(interval)
       
-      return () => clearInterval(interval)
+      return () => {
+        console.log('🛑 Stopping session polling')
+        clearInterval(interval)
+      }
     } else if (sessionPolling) {
       clearInterval(sessionPolling)
       setSessionPolling(null)
+      setPollingCount(0)
     }
-  }, [currentSession])
+  }, [currentSession?.status, currentSession?.sessionId])
 
   const formatMessage = (content: string) => {
     const lines = content.split('\n')
@@ -186,6 +200,69 @@ export default function AIAgentPage() {
     })
   }
 
+  const downloadSessionReport = async (sessionId: string) => {
+    try {
+      console.log(`📄 Starting download for session: ${sessionId}`)
+      
+      addMessage({
+        id: Date.now().toString(),
+        type: 'system',
+        content: '📄 **Generating your trading report...**\n\nCreating comprehensive PDF with all session data, trades, and AI analysis.',
+        timestamp: new Date()
+      })
+
+      const response = await fetch(`http://localhost:8000/api/session/report/${sessionId}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/pdf',
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to generate report: ${response.status} ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
+      
+      if (blob.size === 0) {
+        throw new Error('Empty PDF file received')
+      }
+
+      // Create download
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      
+      const timestamp = new Date().toISOString().split('T')[0]
+      const shortSessionId = sessionId.substring(0, 8)
+      link.download = `Kairos_Trading_Report_${shortSessionId}_${timestamp}.pdf`
+      
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      console.log('✅ PDF download completed successfully')
+
+      addMessage({
+        id: Date.now().toString(),
+        type: 'system',
+        content: `✅ **Report Downloaded Successfully!**\n\n📥 **File:** Kairos_Trading_Report_${shortSessionId}_${timestamp}.pdf\n📁 **Location:** Your browser's downloads folder\n\n📊 **Report includes:**\n• Complete session analysis\n• AI decision breakdown\n• Trade execution details\n• Portfolio performance\n• Risk assessment\n\n🎉 **Session completed successfully!**`,
+        timestamp: new Date()
+      })
+
+    } catch (error) {
+      console.error('Download error:', error)
+      
+      addMessage({
+        id: Date.now().toString(),
+        type: 'system',
+        content: `❌ **Download Failed**\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\n🔧 **Try this:**\n• Manual download: [Click here](http://localhost:8000/api/session/report/${sessionId})\n• Check if backend server is running\n• Refresh page and try again`,
+        timestamp: new Date()
+      })
+    }
+  }
+
   const startTradingSession = async () => {
     if (!selectedDuration) {
       addMessage({
@@ -201,10 +278,12 @@ export default function AIAgentPage() {
     const durationData = DURATION_OPTIONS[selectedDuration as keyof typeof DURATION_OPTIONS]
 
     try {
+      console.log(`🚀 Starting trading session for ${durationData.minutes} minutes`)
+      
       addMessage({
         id: Date.now().toString(),
         type: 'system',
-        content: `🚀 Starting autonomous trading session for ${durationData.text}...`,
+        content: `🚀 **Initializing Trading Session...**\n\n⏰ Duration: ${durationData.text}\n🤖 Starting AI agent...\n📊 Analyzing market conditions...\n\nPlease wait...`,
         timestamp: new Date()
       })
 
@@ -221,10 +300,12 @@ export default function AIAgentPage() {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
       const data = await response.json()
+      console.log('📡 Session response:', data)
 
       if (data.data?.session_id) {
         const session: TradingSession = {
@@ -234,29 +315,35 @@ export default function AIAgentPage() {
           duration: durationData.text,
           durationMinutes: durationData.minutes,
           endTime: data.data.end_time,
-          startTime: new Date().toISOString()
+          startTime: new Date().toISOString(),
+          currentPortfolioValue: data.data.initial_portfolio_value
         }
 
         setCurrentSession(session)
         setSessionDialogOpen(false)
+        console.log(`✅ Session created: ${session.sessionId}`)
 
         addMessage({
           id: Date.now().toString(),
           type: 'system',
-          content: `✅ **Trading Session Started Successfully!**\n\n🆔 **Session ID:** \`${data.data.session_id.substring(0, 8)}...\`\n⏰ **Duration:** ${durationData.text}\n📅 **End Time:** ${new Date(data.data.end_time).toLocaleString()}\n\n🤖 **The AI agent is now:**\n• Analyzing market conditions\n• Making autonomous trading decisions\n• Monitoring portfolio performance\n• Learning from each trade\n\nReal-time updates will appear below...`,
+          content: `✅ **AUTONOMOUS TRADING ACTIVATED!**\n\n🆔 **Session:** \`${session.sessionId.substring(0, 12)}...\`\n⏰ **Duration:** ${durationData.text}\n🏁 **Ends at:** ${new Date(data.data.end_time).toLocaleTimeString()}\n💰 **Starting Value:** $${data.data.initial_portfolio_value?.toLocaleString() || 'Unknown'}\n\n🤖 **AI Agent Status:**\n• ✅ Portfolio analysis complete\n• ✅ Market data connected\n• ✅ Trading engine active\n• ⏳ Making first decision...\n\n📊 **Live updates will appear below...**`,
           timestamp: new Date(),
-          sessionId: data.data.session_id
+          sessionId: session.sessionId
         })
+
+        // Start immediate status checking
+        setTimeout(() => checkSessionStatus(session.sessionId), 2000)
+        
       } else {
         throw new Error('No session ID returned from server')
       }
 
     } catch (error) {
-      console.error('Error starting trading session:', error)
+      console.error('❌ Session start error:', error)
       addMessage({
         id: Date.now().toString(),
         type: 'system',
-        content: `❌ **Failed to start trading session**\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\n💡 **Troubleshooting:**\n• Ensure the API server is running on localhost:8000\n• Check your internet connection\n• Try again in a moment`,
+        content: `❌ **Failed to Start Trading Session**\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\n🔧 **Troubleshooting:**\n• Ensure backend server is running on localhost:8000\n• Check browser console for detailed errors\n• Verify your internet connection\n• Try starting with a shorter duration\n\n💡 **Manual check:** Visit http://localhost:8000/health`,
         timestamp: new Date()
       })
     } finally {
@@ -266,76 +353,79 @@ export default function AIAgentPage() {
 
   const checkSessionStatus = async (sessionId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/autonomous/status/${sessionId}`)
+      console.log(`🔍 Checking status for session: ${sessionId} (poll #${pollingCount})`)
+      
+      const response = await fetch(`http://localhost:8000/api/autonomous/status/${sessionId}`, {
+        method: 'GET',
+        cache: 'no-cache'
+      })
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        console.warn(`⚠️ Status check failed: ${response.status}`)
+        return
       }
 
       const statusData = await response.json()
+      console.log('📊 Status response:', statusData)
 
       if (statusData.session_found) {
-        if (statusData.status === 'completed' && currentSession?.status === 'active') {
-          // Session just completed
-          setCurrentSession(prev => prev ? { ...prev, status: 'completed' } : null)
-          
-          addMessage({
-            id: Date.now().toString(),
-            type: 'session-end',
-            content: `🏁 **Trading Session Completed!**\n\n📊 **Final Results:**\n• Portfolio Value: $${statusData.current_portfolio_value?.toLocaleString() || 'N/A'}\n• Session Duration: ${currentSession?.duration}\n\n📄 **Generating PDF report...**`,
-            timestamp: new Date(),
-            sessionId: sessionId
-          })
-
-          // Trigger PDF download
-          downloadSessionReport(sessionId)
-        }
-
-        // Update session data
-        if (currentSession) {
+        
+        // Update current session data
+        if (currentSession && statusData.current_portfolio_value) {
           setCurrentSession(prev => prev ? {
             ...prev,
             currentPortfolioValue: statusData.current_portfolio_value,
             status: statusData.status
           } : null)
         }
+
+        // Check if session just completed
+        if (statusData.status === 'completed' && currentSession?.status === 'active') {
+          console.log('🏁 Session completed! Updating UI...')
+          
+          setCurrentSession(prev => prev ? { ...prev, status: 'completed' } : null)
+          
+          addMessage({
+            id: Date.now().toString(),
+            type: 'session-end',
+            content: `🏁 **TRADING SESSION COMPLETED!**\n\n📊 **Final Results:**\n• Session ID: \`${sessionId.substring(0, 12)}...\`\n• Duration: ${currentSession?.duration}\n• Final Portfolio: $${statusData.current_portfolio_value?.toLocaleString() || 'Unknown'}\n• Status: ${statusData.status.toUpperCase()}\n\n📄 **Generating comprehensive PDF report...**\n⏳ Download will start automatically in 3 seconds...`,
+            timestamp: new Date(),
+            sessionId: sessionId
+          })
+
+          // Auto-download report after session completion
+          setTimeout(() => {
+            downloadSessionReport(sessionId)
+          }, 3000)
+        }
+
+        // Add periodic status updates for active sessions
+        if (statusData.status === 'active' && pollingCount % 6 === 0) { // Every 30 seconds
+          addMessage({
+            id: Date.now().toString(),
+            type: 'trading-update',
+            content: `🔄 **Session Update** (${Math.floor(pollingCount * 5 / 60)} min)\n\n• Status: ACTIVE 🟢\n• Portfolio: $${statusData.current_portfolio_value?.toLocaleString() || 'Updating...'}\n• AI is analyzing market conditions...\n\n⏰ Time remaining: ~${Math.max(0, Math.ceil((currentSession?.durationMinutes || 0) - (pollingCount * 5 / 60)))} minutes`,
+            timestamp: new Date()
+          })
+        }
+
+      } else {
+        console.warn('⚠️ Session not found in status check')
+        if (pollingCount > 20) { // Stop polling after 100 seconds of no response
+          addMessage({
+            id: Date.now().toString(),
+            type: 'system',
+            content: '⚠️ **Lost connection to trading session**\n\nThe session may have completed or there may be a connection issue. Check the backend logs for more information.',
+            timestamp: new Date()
+          })
+          setCurrentSession(prev => prev ? { ...prev, status: 'completed' } : null)
+        }
       }
     } catch (error) {
-      console.error('Error checking session status:', error)
-    }
-  }
-
-  const downloadSessionReport = async (sessionId: string) => {
-    try {
-      const response = await fetch(`http://localhost:8000/api/session/report/${sessionId}`)
-      
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.style.display = 'none'
-        a.href = url
-        a.download = `kairos_session_${sessionId.substring(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-
-        addMessage({
-          id: Date.now().toString(),
-          type: 'system',
-          content: '📥 **PDF Report Downloaded!**\n\nYour trading session report has been downloaded to your default downloads folder.',
-          timestamp: new Date()
-        })
+      console.error('Status check error:', error)
+      if (pollingCount > 30) { // Stop after many failures
+        setCurrentSession(prev => prev ? { ...prev, status: 'failed' } : null)
       }
-    } catch (error) {
-      console.error('Error downloading report:', error)
-      addMessage({
-        id: Date.now().toString(),
-        type: 'system',
-        content: '⚠️ **Report Download Failed**\n\nUnable to download the PDF report. The session data has been saved and you can request the report later.',
-        timestamp: new Date()
-      })
     }
   }
 
@@ -410,29 +500,44 @@ export default function AIAgentPage() {
   const stopSession = async () => {
     if (currentSession?.sessionId) {
       try {
-        await fetch(`http://localhost:8000/api/autonomous/stop/${currentSession.sessionId}`, {
+        console.log(`🛑 Stopping session: ${currentSession.sessionId}`)
+        
+        const response = await fetch(`http://localhost:8000/api/autonomous/stop/${currentSession.sessionId}`, {
           method: 'POST'
         })
         
-        setCurrentSession(prev => prev ? { ...prev, status: 'completed' } : null)
-        
+        if (response.ok) {
+          setCurrentSession(prev => prev ? { ...prev, status: 'completed' } : null)
+          
+          addMessage({
+            id: Date.now().toString(),
+            type: 'system',
+            content: '⏹️ **Trading session stopped manually**\n\nGenerating final report and downloading...',
+            timestamp: new Date()
+          })
+
+          // Download report after manual stop
+          setTimeout(() => {
+            downloadSessionReport(currentSession.sessionId)
+          }, 2000)
+        }
+      } catch (error) {
+        console.error('Error stopping session:', error)
         addMessage({
           id: Date.now().toString(),
           type: 'system',
-          content: '⏹️ **Trading session stopped manually.**\n\nGenerating final report...',
+          content: '⚠️ **Error stopping session**\n\nThere was an issue stopping the session. It may have already completed.',
           timestamp: new Date()
         })
-      } catch (error) {
-        console.error('Error stopping session:', error)
       }
     }
   }
 
   const quickAssistantCommands = [
-    { label: "Portfolio", command: "Show my current portfolio" },
-    { label: "BTC Price", command: "What's the current Bitcoin price?" },
-    { label: "Crypto News", command: "Show me the latest crypto news" },
-    { label: "Market Analysis", command: "Analyze the current crypto market" },
+    { label: "💼 Portfolio", command: "Show my current portfolio and balances" },
+    { label: "₿ BTC Price", command: "What's the current Bitcoin price and market analysis?" },
+    { label: "📰 Crypto News", command: "Show me the latest cryptocurrency news" },
+    { label: "📊 Market Analysis", command: "Analyze the current crypto market conditions" },
   ]
 
   return (
@@ -529,8 +634,8 @@ export default function AIAgentPage() {
                         <Alert>
                           <AlertTriangle className="h-4 w-4" />
                           <AlertDescription>
-                            The AI will make real trading decisions and execute trades automatically. 
-                            Monitor your session and ensure you have sufficient balance.
+                            <strong>Real Trading Alert:</strong> The AI will execute actual trades with your portfolio. 
+                            Monitor the session and ensure sufficient balance. A PDF report will be automatically downloaded when complete.
                           </AlertDescription>
                         </Alert>
                         <div className="flex gap-2">
@@ -573,11 +678,17 @@ export default function AIAgentPage() {
             {currentSession && (
               <div className="flex items-center gap-2">
                 <Badge variant={currentSession.status === 'active' ? 'default' : 'secondary'}>
-                  {currentSession.status === 'active' ? '🔥 Active' : '✅ Completed'}
+                  {currentSession.status === 'active' ? '🔥 Active' : 
+                   currentSession.status === 'completed' ? '✅ Completed' : '❌ Failed'}
                 </Badge>
                 {currentSession.currentPortfolioValue && (
                   <Badge variant="outline">
                     ${currentSession.currentPortfolioValue.toLocaleString()}
+                  </Badge>
+                )}
+                {currentSession.status === 'active' && (
+                  <Badge variant="outline">
+                    Poll #{pollingCount}
                   </Badge>
                 )}
               </div>
@@ -607,6 +718,13 @@ export default function AIAgentPage() {
                   </>
                 )}
               </div>
+              
+              {/* Debug info */}
+              {currentSession?.status === 'active' && (
+                <div className="text-xs text-muted-foreground">
+                  Checking status every 5s | Session: {currentSession.sessionId.substring(0, 8)}...
+                </div>
+              )}
             </div>
 
             {/* Messages Area - Flexible Height */}
@@ -670,6 +788,19 @@ export default function AIAgentPage() {
                                 {Math.round(message.confidence * 100)}%
                               </Badge>
                             )}
+                          </div>
+                        )}
+                        {message.sessionId && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => downloadSessionReport(message.sessionId!)}
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              PDF
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -765,18 +896,97 @@ export default function AIAgentPage() {
                   <h3 className="text-lg font-medium">🤖 Autonomous Trading Agent</h3>
                   <p className="text-muted-foreground">
                     Start a trading session to let the AI make autonomous trading decisions for you.
-                    The agent will analyze market conditions and execute trades based on advanced algorithms.
+                    The agent will analyze market conditions, execute trades, and generate a comprehensive PDF report when complete.
                   </p>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="p-3 bg-background rounded-lg">
+                      <div className="font-medium mb-1">✅ What it does:</div>
+                      <ul className="text-muted-foreground space-y-1 text-xs">
+                        <li>• Real-time market analysis</li>
+                        <li>• Autonomous trade execution</li>
+                        <li>• Risk management</li>
+                        <li>• PDF report generation</li>
+                      </ul>
+                    </div>
+                    <div className="p-3 bg-background rounded-lg">
+                      <div className="font-medium mb-1">⚠️ Important:</div>
+                      <ul className="text-muted-foreground space-y-1 text-xs">
+                        <li>• Uses real trading APIs</li>
+                        <li>• Requires sufficient balance</li>
+                        <li>• Cannot be undone</li>
+                        <li>• Monitor the session</li>
+                      </ul>
+                    </div>
+                  </div>
                   <Button 
                     variant="outline" 
                     size="lg"
                     onClick={() => setSessionDialogOpen(true)}
-                    className="mt-2"
+                    className="mt-4"
                   >
                     <Play className="h-5 w-5 mr-2" />
                     Configure Trading Session
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {/* Active Session Dashboard */}
+            {aiMode === 'agent' && currentSession?.status === 'active' && (
+              <div className="pt-6">
+                <Card className="max-w-2xl mx-auto">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Activity className="h-5 w-5 text-green-500" />
+                      Live Trading Session
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Session ID</div>
+                        <div className="text-xs font-mono bg-muted px-2 py-1 rounded">
+                          {currentSession.sessionId.substring(0, 16)}...
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Duration</div>
+                        <div className="text-xs">{currentSession.duration}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Portfolio Value</div>
+                        <div className="text-sm font-semibold text-green-600">
+                          ${currentSession.currentPortfolioValue?.toLocaleString() || 'Updating...'}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Status Checks</div>
+                        <div className="text-xs text-muted-foreground">
+                          #{pollingCount} (every 5s)
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        onClick={stopSession}
+                        className="flex-1"
+                      >
+                        <Pause className="h-4 w-4 mr-2" />
+                        Stop Session
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => checkSessionStatus(currentSession.sessionId)}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </div>

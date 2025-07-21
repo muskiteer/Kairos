@@ -54,6 +54,7 @@ import {
 } from "lucide-react"
 
 // Supported tokens based on portfolio API
+
 const SUPPORTED_TOKENS = {
   "USDC": { name: "USD Coin", symbol: "USDC", decimals: 6 },
   "USDbC": { name: "USD Base Coin", symbol: "USDbC", decimals: 6 },
@@ -67,6 +68,7 @@ const SUPPORTED_TOKENS = {
   "AAVE": { name: "Aave", symbol: "AAVE", decimals: 18 },
   "MATIC": { name: "Polygon", symbol: "MATIC", decimals: 18 },
   "SOL": { name: "Solana", symbol: "SOL", decimals: 9 },
+  "USDC_SOL": { name: "USDC (Solana)", symbol: "USDC_SOL", decimals: 6 }, // Added this!
   "PEPE": { name: "Pepe", symbol: "PEPE", decimals: 18 },
   "SHIB": { name: "Shiba Inu", symbol: "SHIB", decimals: 18 }
 }

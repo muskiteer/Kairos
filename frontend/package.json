@@ -6,10 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "production": "npm run build && npm start"
   },
-  "dependencies": {
-    "@lit-protocol/vincent-app-sdk": "^1.0.2",
+  "dependencies": {,
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-collapsible": "^1.1.11",
     "@radix-ui/react-dialog": "^1.1.14",
@@ -24,6 +24,7 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "autoprefixer": "10.4.0",
     "framer-motion": "^12.23.3",
     "lucide-react": "^0.525.0",
     "motion": "^12.23.3",
@@ -32,6 +33,10 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

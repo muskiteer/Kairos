@@ -19,6 +19,19 @@ sys.path.append(backend_dir)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(backend_dir, '.env'))
 
+PORT = int(os.environ.get("PORT", 8000))
+
+FRONTEND_URLS = [
+    "https://kairos-frontend.onrender.com",  # Replace with your actual frontend URL
+    "http://localhost:3000",  # For local development
+    "http://localhost:3001"
+]
+
+if os.getenv("ENVIRONMENT") == "production":
+    ALLOWED_ORIGINS = [url for url in FRONTEND_URLS if url.startswith("https://")]
+else:
+    ALLOWED_ORIGINS = FRONTEND_URLS
+
 # Import the specific, refactored agent and necessary functions
 try:
     from agent.kairos_autonomous_agent import KairosAutonomousAgent
@@ -46,12 +59,17 @@ except ImportError:
         get_trades_data = lambda x: {"trades": []}
 
 # Initialize FastAPI app
-app = FastAPI(title="Kairos Autonomous Trading API", version="3.0.0")
+app = FastAPI(
+    title="Kairos Autonomous Trading API", 
+    version="3.0.0",
+    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
+    redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None
+)
 
 # Add CORS middleware to allow frontend connections
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -109,7 +127,7 @@ def get_coingecko_price(token: str) -> float:
             "USDC": "usd-coin", "USDbC": "usd-coin", "WETH": "weth",
             "WBTC": "wrapped-bitcoin", "DAI": "dai", "USDT": "tether",
             "UNI": "uniswap", "LINK": "chainlink", "ETH": "ethereum",
-            "AAVE": "aave", "MATIC": "matic-network", "SOL": "solana",
+            "AAVE": "aave", "MATIC": "matic-network", "SOL": "solana","USDC_SOL": "usd-coin",
             "PEPE": "pepe", "SHIB": "shiba-inu", "BTC": "bitcoin"
         }
         
@@ -182,7 +200,12 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "version": "3.0.0"
+    }
 
 @app.get("/api/balance/{token}")
 async def get_token_balance(token: str):
@@ -630,17 +653,21 @@ async def stop_autonomous_session(session_id: str):
 async def download_session_report(session_id: str):
     """Generate and download PDF report for a trading session."""
     try:
+        print(f"📄 Generating report for session: {session_id}")
+        
         # Get session data from database
         session_result = supabase_client.client.table("trading_sessions").select("*").eq("id", session_id).execute()
         
         if not session_result.data:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         session_data = session_result.data[0]
+        print(f"✅ Found session data for {session_id}")
         
         # Get trades for this session
         trades_result = supabase_client.client.table("trades").select("*").eq("session_id", session_id).execute()
         trades = trades_result.data if trades_result.data else []
+        print(f"📊 Found {len(trades)} trades for session")
         
         # Prepare data for report generation
         report_data = {
@@ -659,20 +686,75 @@ async def download_session_report(session_id: str):
         }
         
         # Generate PDF report
+        print("🔨 Generating PDF report...")
         output_path = generate_autonomous_session_report(report_data)
         
-        if os.path.exists(output_path):
-            return FileResponse(
-                path=output_path,
-                filename=f"kairos_session_{session_id[:8]}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                media_type="application/pdf"
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Failed to generate report")
+        if not output_path or not os.path.exists(output_path):
+            raise HTTPException(status_code=500, detail="Failed to generate PDF report")
+        
+        print(f"✅ PDF generated successfully: {output_path}")
+        
+        # Generate a nice filename for download
+        timestamp = datetime.now().strftime("%Y%m%d")
+        short_session_id = session_id[:8]
+        download_filename = f"Kairos_Trading_Report_{short_session_id}_{timestamp}.pdf"
+        
+        # Return the file with proper headers for browser download
+        return FileResponse(
+            path=output_path,
+            filename=download_filename,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={download_filename}",
+                "Content-Type": "application/pdf",
+                "Cache-Control": "no-cache",
+                "Access-Control-Allow-Origin": "*",  # Allow CORS for download
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Methods": "GET"
+            }
+        )
             
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error generating report: {e}")
+        print(f"❌ Error generating report: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
+
+@app.get("/api/session/report/{session_id}/info")
+async def get_session_report_info(session_id: str):
+    """Get information about a session for report generation (debugging)."""
+    try:
+        # Get session data
+        session_result = supabase_client.client.table("trading_sessions").select("*").eq("id", session_id).execute()
+        
+        if not session_result.data:
+            return {"error": f"Session {session_id} not found"}
+        
+        session_data = session_result.data[0]
+        
+        # Get trades
+        trades_result = supabase_client.client.table("trades").select("*").eq("session_id", session_id).execute()
+        trades = trades_result.data if trades_result.data else []
+        
+        return {
+            "session_id": session_id,
+            "session_found": True,
+            "session_status": session_data.get("status"),
+            "trade_count": len(trades),
+            "session_start": session_data.get("start_time"),
+            "session_end": session_data.get("end_time"),
+            "can_generate_report": True
+        }
+        
+    except Exception as e:
+        return {
+            "session_id": session_id,
+            "session_found": False,
+            "error": str(e),
+            "can_generate_report": False
+        }
 
 @app.get("/api/portfolio")
 async def get_portfolio_endpoint(user_id: str = "default"):
@@ -802,9 +884,14 @@ async def get_trade_history(user_id: str = "default"):
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Kairos Autonomous Trading API Server (v3.0)...")
-    print("🔗 API Documentation: http://localhost:8000/docs")
-    print("💬 Assistant Mode: /api/chat/assistant")
-    print("🤖 Agent Mode: /api/chat")
-    print("📊 Health Check: http://localhost:8000/health")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+    print(f"🚀 Starting Kairos Autonomous Trading API Server (v3.0) on port {PORT}...")
+    print(f"🌍 Environment: {os.getenv('ENVIRONMENT', 'development')}")
+    print(f"🔗 Allowed Origins: {ALLOWED_ORIGINS}")
+    
+    # Use the PORT environment variable for production
+    uvicorn.run(
+        "api_server:app", 
+        host="0.0.0.0", 
+        port=PORT, 
+        reload=os.getenv("ENVIRONMENT") != "production"
+    )
