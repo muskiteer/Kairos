@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-Kairos Trading API Server - Enhanced for True Autonomous Trading with Assistant Mode
-"""
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware

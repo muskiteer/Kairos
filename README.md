@@ -1,307 +1,249 @@
-# 🚀 Kairos - Powerful Cryptocurrency Trading Assistant
+# Kairos AI Trading System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Next.js](https://img.shields.io/badge/Next.js-13+-black.svg)](https://nextjs.org/)
-[![Gemini AI](https://img.shields.io/badge/Gemini-AI-green.svg)](https://ai.google.dev/)
+## Overview
 
-> **A sophisticated AI-powered cryptocurrency trading platform with real-time portfolio management, intelligent trade execution, and comprehensive market analysis.**
+Kairos is a comprehensive autonomous cryptocurrency trading platform powered by advanced AI technology. The system combines Gemini AI's sophisticated decision-making capabilities with real-time market data to provide both autonomous trading and interactive market analysis features.
 
-## ✨ Features
-
-### 🤖 **AI-Powered Trading Assistant**
-- **Gemini AI Integration** - Advanced natural language processing for trading commands
-- **Intelligent Trade Analysis** - AI-driven market insights and trading recommendations
-- **Natural Language Trading** - Execute trades using conversational commands
-- **Real-time Reasoning** - See the AI's thought process for every action
-
-### 🔗 **Complete API Integration**
-- **Recall API** - Real portfolio management and trade execution
-- **CoinPanic News API** - Live cryptocurrency news and market sentiment
-- **Real-time Price Data** - Up-to-the-minute token prices and market data
-- **Trading History** - Complete transaction records and analytics
-
-### 🎨 **Modern Web Interface**
-- **Professional UI** - Built with Next.js 13+ and shadcn/ui components
-- **Real-time Chat** - Interactive AI assistant with expandable response details
-- **Responsive Design** - Works seamlessly on desktop, tablet, and mobile
-- **Dark/Light Mode** - Customizable theme preferences
-
-### 💰 **Trading Capabilities**
-- **Real Trade Execution** - Actual cryptocurrency trades via Recall API
-- **Portfolio Management** - View balances, track performance, analyze holdings
-- **Multi-Token Support** - USDC, WETH, WBTC, DAI, USDT, UNI, LINK, ETH
-- **Risk Management** - Built-in safety checks and balance verification
-
-## 🏗️ Architecture
+## System Architecture
 
 ```
-├── frontend/                 # Next.js React Application
-│   ├── src/
-│   │   ├── app/             # App Router (Next.js 13+)
-│   │   ├── components/      # Reusable UI Components
-│   │   └── lib/             # Utilities and Helpers
-│   └── package.json
-├── backend/                 # Python API Server
-│   ├── api_server.py        # Flask API Server
-│   ├── gemini_agent.py      # AI Trading Agent
-│   ├── portfolio.py         # Portfolio Management
-│   ├── token_price.py       # Price Data Integration
-│   ├── execute.py           # Trade Execution
-│   ├── coinpanic_api.py     # News Integration
-│   └── requirements.txt
-└── README.md
+Kairos AI Trading System
+├── Frontend (React/Next.js)     # Web interface and user experience
+│   ├── AI Agent Interface       # Autonomous trading and assistant modes
+│   ├── Manual Trading          # Direct trading interface
+│   └── Portfolio Dashboard     # Real-time portfolio management
+├── Backend (Python/FastAPI)    # Core trading engine and AI integration
+│   ├── Gemini AI Agent        # Decision-making and market analysis
+│   ├── Trading Engine         # Multi-chain trade execution
+│   ├── Portfolio Manager      # Real-time balance and asset tracking
+│   └── Analytics Engine       # Performance tracking and reporting
+└── External Integrations      # Third-party services and APIs
+    ├── Recall Trading API     # Real trade execution
+    ├── CoinGecko API          # Live price data
+    ├── Supabase Database      # Data persistence
+    └── TradingView Charts     # Technical analysis
 ```
 
-## 🚀 Quick Start
+## Key Features
+
+### Autonomous Trading
+- **AI-Powered Decisions**: Gemini AI analyzes market conditions, news sentiment, and portfolio data
+- **Multi-Chain Support**: Trade across Ethereum, Polygon, Solana, and Base networks
+- **Risk Management**: Intelligent position sizing and portfolio protection
+- **Learning System**: AI improves strategies based on trade outcomes
+- **Real-Time Execution**: Automated trade execution with comprehensive validation
+
+### Interactive AI Assistant
+- **Market Analysis**: Real-time crypto price data and trend analysis
+- **Portfolio Insights**: Comprehensive holdings analysis and recommendations
+- **Educational Content**: Crypto concepts and trading strategy explanations
+- **News Integration**: Latest cryptocurrency news and sentiment analysis
+
+### Advanced Analytics
+- **Performance Tracking**: Real-time P&L, success rates, and trading metrics
+- **Strategy Analysis**: AI decision pattern analysis and optimization
+- **Professional Reports**: Automated PDF report generation
+- **Risk Assessment**: Comprehensive risk scoring and management
+
+### Professional Interface
+- **Dual Mode Operation**: Switch between autonomous agent and interactive assistant
+- **Real-Time Updates**: Live portfolio and session monitoring
+- **Responsive Design**: Mobile-first responsive interface
+- **Integration Charts**: TradingView integration for technical analysis
+
+## Technology Stack
+
+### Frontend
+- **Framework**: Next.js 14 with TypeScript
+- **Styling**: Tailwind CSS with Shadcn/UI components
+- **State Management**: React hooks with custom state management
+- **Charts**: TradingView widget integration
+- **Theme**: Dark/light mode with system preference detection
+
+### Backend
+- **Framework**: FastAPI with Python 3.8+
+- **AI Integration**: Google Gemini 1.5 Pro
+- **Database**: Supabase PostgreSQL
+- **Trading API**: Recall Network trading infrastructure
+- **Market Data**: CoinGecko API integration
+- **Reports**: ReportLab PDF generation
+
+### Infrastructure
+- **Development**: Local development with hot reloading
+- **Production**: Docker containerization ready
+- **Database**: Supabase cloud PostgreSQL
+- **API Integration**: RESTful APIs with comprehensive error handling
+- **Monitoring**: Comprehensive logging and error tracking
+
+## Quick Start
 
 ### Prerequisites
 
-- **Python 3.8+** with pip
-- **Node.js 18+** with npm/yarn
-- **API Keys** (see [Configuration](#-configuration))
+- **Node.js 18+** for frontend development
+- **Python 3.8+** for backend development
+- **API Keys**: Gemini AI, Supabase, Recall Network
+- **Package Managers**: npm/yarn for frontend, pip for backend
 
-### 1. Clone Repository
+### Installation
 
+1. **Clone Repository**
 ```bash
-git clone https://github.com/yourusername/Kairos.git
-cd Kairos
+git clone <repository-url>
+cd kairos-ai-trading
 ```
 
-### 2. Backend Setup
-
+2. **Backend Setup**
 ```bash
 cd backend
-
-# Create virtual environment (recommended)
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-pip install flask flask-cors
 
-# Set up environment variables (see Configuration section)
+# Configure environment variables
 cp .env.example .env
 # Edit .env with your API keys
-
-# Start the API server
-python3 api_server.py
 ```
 
-### 3. Frontend Setup
-
+3. **Frontend Setup**
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
+# or yarn install
 
-# Start development server
-npm run dev
+# Configure environment variables
+cp .env.example .env.local
+# Edit .env.local with your configuration
 ```
 
-### 4. Access the Application
+4. **Start Services**
 
-- **Frontend**: http://localhost:3000
-- **AI Trading Interface**: http://localhost:3000/ai-agent
-- **API Server**: http://localhost:5000
+Backend:
+```bash
+cd backend
+source venv/bin/activate
+python api_server.py
+# Server starts on http://localhost:8000
+```
 
-## ⚙️ Configuration
+Frontend:
+```bash
+cd frontend
+npm run dev
+# Application starts on http://localhost:3000
+```
 
-Create a `.env` file in the `backend/` directory:
+### Environment Configuration
 
+#### Backend (.env)
 ```env
 # AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here
 
+# Database Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+
 # Trading API Configuration
 RECALL_API_KEY=your_recall_api_key_here
 RECALL_SANDBOX_API_BASE=https://api.sandbox.competitions.recall.network
-
-# News API Configuration
-COINPANIC_API_KEY=your_coinpanic_api_key_here
-
-# Optional: Additional Configuration
-DEBUG=True
 ```
 
-### 🔑 Getting API Keys
-
-1. **Gemini AI**: [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. **Recall API**: [Recall Platform](https://recall.network/)
-3. **CoinPanic API**: [CoinPanic](https://cryptopanic.com/developers/)
-
-## 💬 Usage Examples
-
-### Trading Commands
-```
-"Buy 500 USDC worth of WETH"
-"Trade 100 USDC to WBTC"
-"Swap 50 USDC for DAI"
-"Convert 25 WETH to USDC"
+#### Frontend (.env.local)
+```env
+# API Configuration
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_ENVIRONMENT=development
 ```
 
-### Portfolio Management
+## Usage Guide
+
+### Autonomous Trading Mode
+
+1. **Access AI Agent**: Navigate to the AI Agent section
+2. **Select Agent Mode**: Choose "Agent" from the mode selector
+3. **Configure Session**: Set trading duration (10 minutes to 24 hours)
+4. **Start Trading**: Click "Start Trading" to begin autonomous session
+5. **Monitor Progress**: View real-time updates and AI decision-making
+6. **Download Reports**: Access PDF reports when session completes
+
+### Interactive Assistant Mode
+
+1. **Select Assistant Mode**: Choose "Assistant" from the mode selector
+2. **Ask Questions**: Type queries about markets, portfolio, or crypto concepts
+3. **Get Analysis**: Receive real-time market analysis and insights
+4. **Portfolio Review**: Ask for portfolio optimization suggestions
+5. **Market Updates**: Get latest news and price information
+
+### Manual Trading
+
+1. **Navigate to Trading**: Access the Manual Trading section
+2. **Select Tokens**: Choose from/to tokens for your trade
+3. **Set Amount**: Enter the amount to trade with balance validation
+4. **Review Trade**: Check estimated output and fee information
+5. **Execute Trade**: Confirm and execute the trade
+6. **Track Results**: Monitor trade execution and portfolio updates
+
+## API Documentation
+
+### Core Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/portfolio` | GET | Current portfolio data |
+| `/api/trade` | POST | Execute manual trade |
+| `/api/chat` | POST | Start autonomous trading session |
+| `/api/chat/assistant` | POST | Interactive AI assistant |
+| `/api/autonomous/status/{id}` | GET | Trading session status |
+| `/api/session/report/{id}` | GET | Download session PDF report |
+
+### Real-Time Features
+
+- **Portfolio Updates**: Live balance and value tracking
+- **Price Feeds**: Real-time cryptocurrency prices
+- **Session Monitoring**: Live autonomous trading progress
+- **Trade Notifications**: Instant trade execution updates
+
+## Security & Risk Management
+
+### Trading Security
+- **API Key Management**: Secure storage of all API credentials
+- **Trade Validation**: Comprehensive pre-trade validation
+- **Balance Verification**: Real-time balance checking
+- **Position Limits**: Maximum 50% of token balance per trade
+
+### Risk Controls
+- **Portfolio Diversification**: Multi-asset allocation management
+- **Chain Risk Management**: Distributed across multiple networks
+- **AI Confidence Scoring**: Trade execution based on AI confidence levels
+- **Stop-Loss Protection**: Intelligent risk management through AI decisions
+
+### Data Security
+- **Environment Variables**: Secure credential management
+- **Database Security**: Supabase row-level security
+- **API Rate Limiting**: Protection against abuse
+- **Error Handling**: Secure error messages without sensitive data exposure
+
+## Monitoring & Analytics
+
+### Performance Metrics
+- **Trading Success Rate**: Percentage of successful trades
+- **Portfolio Performance**: Real-time P&L tracking
+- **AI Confidence Trends**: Analysis of AI decision confidence
+- **Risk-Adjusted Returns**: Performance relative to risk taken
+
+### Reporting Features
+- **Session Reports**: Comprehensive PDF reports for each trading session
+- **Strategy Analysis**: AI decision pattern analysis
+- **Performance Tracking**: Historical performance trends
+- **Risk Assessment**: Detailed risk analysis and recommendations
+
+## Development
+
+### Project Structure
+
 ```
-"Show my portfolio"
-"How much USDC do I have?"
-"What's my WETH balance?"
-"Check all my token balances"
-```
-
-### Market Analysis
-```
-"What's the price of WETH?"
-"Show me ETH price trends"
-"Get current market prices"
-"Price analysis for WBTC"
-```
-
-### News & Sentiment
-```
-"Show me trending crypto news"
-"Get bullish market news"
-"Show bearish sentiment"
-"Bitcoin news updates"
-```
-
-### Trading History
-```
-"Show my trading history"
-"Recent transaction records"
-"My trade performance"
-```
-
-## 🛠️ Development
-
-### Backend Development
-
-```bash
-cd backend
-
-# Run in development mode
-python3 api_server.py
-
-# Run tests
-python3 -m pytest tests/
-
-# Format code
-black .
-```
-
-### Frontend Development
-
-```bash
-cd frontend
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Run linting
-npm run lint
-```
-
-### API Endpoints
-
-- `POST /api/chat` - Send message to AI agent
-- `GET /api/portfolio` - Get portfolio data
-- `GET /api/price/<symbol>` - Get token price
-- `GET /api/news` - Get cryptocurrency news
-- `GET /api/health` - Health check
-
-## 📊 Supported Tokens
-
-| Symbol | Name | Network |
-|--------|------|---------|
-| USDC | USD Coin | Ethereum |
-| WETH | Wrapped Ethereum | Ethereum |
-| WBTC | Wrapped Bitcoin | Ethereum |
-| DAI | Dai Stablecoin | Ethereum |
-| USDT | Tether | Ethereum |
-| UNI | Uniswap | Ethereum |
-| LINK | Chainlink | Ethereum |
-| ETH | Ethereum | Ethereum |
-
-## 🔒 Security Features
-
-- **API Key Management** - Secure environment variable storage
-- **Input Validation** - Comprehensive request validation
-- **Error Handling** - Graceful error management and user feedback
-- **Rate Limiting** - Built-in protection against API abuse
-- **Balance Verification** - Pre-trade balance checks
-
-## 🎯 Advanced Features
-
-### AI Capabilities
-- **Intent Recognition** - Understands complex trading instructions
-- **Context Awareness** - Maintains conversation context
-- **Risk Assessment** - Evaluates trade risks and market conditions
-- **Educational Mode** - Explains trading concepts and strategies
-
-### Technical Features
-- **Real-time Updates** - Live price feeds and portfolio updates
-- **Expandable Responses** - Detailed reasoning and API response viewing
-- **Connection Monitoring** - Backend health checks and retry mechanisms
-- **Responsive Design** - Optimized for all device sizes
-
-## 🧪 Testing
-
-```bash
-# Backend tests
-cd backend
-python3 -m pytest
-
-# Frontend tests
-cd frontend
-npm test
-
-# Integration tests
-npm run test:integration
-```
-
-## 📈 Performance
-
-- **Fast Response Times** - Optimized API calls and caching
-- **Efficient UI** - React optimization and lazy loading
-- **Scalable Architecture** - Modular design for easy expansion
-- **Memory Management** - Efficient resource utilization
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Google Gemini AI** for advanced language processing
-- **Recall Network** for cryptocurrency trading infrastructure
-- **CoinPanic** for real-time news and market sentiment
-- **shadcn/ui** for beautiful UI components
-- **Next.js** for the modern React framework
-
-## 📞 Support
-
-- **Documentation**: [Wiki](https://github.com/yourusername/Kairos/wiki)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/Kairos/issues)
-- **Discord**: [Community Server](https://discord.gg/Kairos)
-
----
-
-<div align="center">
-
-**Made with ❤️ by the Kairos Team**
-
-[Website](https://Kairos.com) • [Documentation](https://docs.Kairos.com) • [Discord](https://discord.gg/Kairos)
-
-</div>
+kairos-ai-trading/
+├── frontend/               # React/Next.js web application
+│   ├── src/app/           # Next.js app directory pages
+│   ├── src/components/    # Reusable React components
+│

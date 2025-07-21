@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-Main entry point for Gemini Trading Agent
-"""
 
 from agent.gemini_agent import GeminiTradingAgent
 
