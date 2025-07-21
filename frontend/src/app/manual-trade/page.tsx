@@ -52,7 +52,7 @@ import {
   TrendingDown,
   Activity
 } from "lucide-react"
-
+import { getApiUrl } from '@/lib/config'
 // Supported tokens based on portfolio API
 
 const SUPPORTED_TOKENS = {
@@ -135,7 +135,7 @@ export default function ManualTradePage() {
   const fetchPortfolio = async () => {
     setLoadingPortfolio(true)
     try {
-      const response = await fetch('http://localhost:8000/api/portfolio')
+      const response = await fetch(getApiUrl('/api/portfolio'))
       if (response.ok) {
         const data = await response.json()
         setPortfolioData(data)
@@ -152,7 +152,8 @@ export default function ManualTradePage() {
   // Fetch token price
   const fetchPrice = async (token: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/price/${token}`)
+      // const response = await fetch(getApiUrl('/api/portfolio'))
+      const response = await fetch(getApiUrl(`/api/price/${token}`))
       if (response.ok) {
         const data = await response.json()
         return data.price || 0
@@ -222,7 +223,7 @@ export default function ManualTradePage() {
     setTradeResult(null)
 
     try {
-      const response = await fetch('http://localhost:8000/api/trade', {
+      const response = await fetch(getApiUrl('/api/trade'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

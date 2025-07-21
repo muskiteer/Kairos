@@ -9,7 +9,7 @@
     "lint": "next lint",
     "production": "npm run build && npm start"
   },
-  "dependencies": {,
+  "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-collapsible": "^1.1.11",
     "@radix-ui/react-dialog": "^1.1.14",

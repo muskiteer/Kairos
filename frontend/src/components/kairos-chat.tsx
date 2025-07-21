@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Bot, User, Send, Activity, TrendingUp, AlertTriangle } from "lucide-react";
+import { getApiUrl } from '@/lib/config'
+
 
 interface ChatMessage {
   id: string;
@@ -55,7 +57,7 @@ export function KairosChat({ sessionId, onSessionUpdate }: KairosChatProps) {
 
   const startNewSession = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/sessions", {
+      const response = await fetch(getApiUrl('/api/sessions'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: "default" })
@@ -102,7 +104,8 @@ export function KairosChat({ sessionId, onSessionUpdate }: KairosChatProps) {
         sessionToUse = currentSessionId;
       }
 
-      const response = await fetch("http://localhost:8000/api/chat", {
+      // const response = await fetch(getApiUrl('/api/portfolio'))
+      const response = await fetch(getApiUrl('/api/chat'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

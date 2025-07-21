@@ -23,6 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { getApiUrl } from '@/lib/config'
 import {
   Select,
   SelectContent,
@@ -211,7 +212,8 @@ export default function AIAgentPage() {
         timestamp: new Date()
       })
 
-      const response = await fetch(`http://localhost:8000/api/session/report/${sessionId}`, {
+      // const response = await fetch(getApiUrl('/api/portfolio'))
+      const response = await fetch(getApiUrl(`/api/session/report/${sessionId}`), {
         method: 'GET',
         headers: {
           'Accept': 'application/pdf',
@@ -286,8 +288,9 @@ export default function AIAgentPage() {
         content: `🚀 **Initializing Trading Session...**\n\n⏰ Duration: ${durationData.text}\n🤖 Starting AI agent...\n📊 Analyzing market conditions...\n\nPlease wait...`,
         timestamp: new Date()
       })
-
-      const response = await fetch('http://localhost:8000/api/chat', {
+      
+      // const response = await fetch(getApiUrl('/api/portfolio'))
+      const response = await fetch(getApiUrl('/api/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -354,8 +357,8 @@ export default function AIAgentPage() {
   const checkSessionStatus = async (sessionId: string) => {
     try {
       console.log(`🔍 Checking status for session: ${sessionId} (poll #${pollingCount})`)
-      
-      const response = await fetch(`http://localhost:8000/api/autonomous/status/${sessionId}`, {
+      // const response = await fetch(getApiUrl('/api/portfolio'))
+      const response = await fetch(getApiUrl(`/api/autonomous/status/${sessionId}`), {
         method: 'GET',
         cache: 'no-cache'
       })
@@ -444,7 +447,8 @@ export default function AIAgentPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat/assistant', {
+      // const response = await fetch(getApiUrl('/api/chat/assistant'))
+      const response = await fetch(getApiUrl('/api/chat/assistant'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -501,8 +505,7 @@ export default function AIAgentPage() {
     if (currentSession?.sessionId) {
       try {
         console.log(`🛑 Stopping session: ${currentSession.sessionId}`)
-        
-        const response = await fetch(`http://localhost:8000/api/autonomous/stop/${currentSession.sessionId}`, {
+        const response = await fetch(getApiUrl(`/api/chat/autonomous/stop/${currentSession.sessionId}`), {
           method: 'POST'
         })
         

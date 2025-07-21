@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
+import { getApiUrl } from '@/lib/config'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -123,7 +124,8 @@ export default function TradeHistoryPage() {
       setLoadingMessage("Fetching trades from API...")
       
       // Updated to use the correct endpoint
-      const response = await fetch('http://localhost:8000/api/trades/history', {
+      // const response = await fetch(getApiUrl('/api/portfolio'))
+      const response = await fetch(getApiUrl('/api/trades/history'), {
         method: 'GET',
         headers: { 
           'Content-Type': 'application/json',
