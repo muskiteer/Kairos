@@ -53,9 +53,9 @@ interface Trade {
   gasFee?: number
   slippage?: number
   type: 'buy' | 'sell' | 'swap'
-  session_id?: string  // For AI trades
-  strategy?: string    // For AI trades
-  source?: 'manual' | 'ai_agent'  // Trade source
+  session_id?: string
+  strategy?: string
+  source?: 'manual' | 'ai_agent'
 }
 
 interface TradeStats {
@@ -79,7 +79,6 @@ export default function TradeHistoryPage() {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'success' | 'failed' | 'pending'>('all')
-  const [selectedSource, setSelectedSource] = useState<'all' | 'manual' | 'ai_agent'>('all')
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
   const [loadingMessage, setLoadingMessage] = useState("")
 
@@ -87,7 +86,19 @@ export default function TradeHistoryPage() {
   const [cachedData, setCachedData] = useState<{trades: Trade[], stats: TradeStats, timestamp: number} | null>(null)
   const CACHE_DURATION = 30000 // 30 seconds
 
-  // Fetch trade history from API - OPTIMIZED WITH SINGLE CALL
+  // Function to parse trades from the backend response
+  const parseTradesFromPortfolio = (data: any): Trade[] => {
+    const trades: Trade[] = []
+    
+    // Check if data has trades array (this is no longer needed with the backend fix)
+    if (data.trades && Array.isArray(data.trades)) {
+      return data.trades
+    }
+    
+    return trades
+  }
+
+  // Fetch trade history using the Python backend function
   const fetchTradeHistory = async (useCache = true) => {
     // Check cache first
     if (useCache && cachedData && (Date.now() - cachedData.timestamp) < CACHE_DURATION) {
@@ -103,118 +114,100 @@ export default function TradeHistoryPage() {
     
     try {
       const startTime = Date.now()
-      console.log("🚀 Fetching trade history with single API call...")
+      console.log("🚀 Fetching trade history...")
       
-      // Use a timeout to prevent hanging
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      // Since the backend doesn't have a direct trades endpoint,
+      // we'll need to fetch from a different endpoint or modify the backend
+      // For now, let's try to fetch portfolio data which might contain trades
       
-      setLoadingMessage("Fetching all trades...")
+      setLoadingMessage("Fetching trades from API...")
       
-      // Single API call to get all trades (both manual and AI agent)
+      // Updated to use the correct endpoint
       const response = await fetch('http://localhost:8000/api/trades/history', {
-        signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json',
+        }
       })
       
-      clearTimeout(timeoutId)
-      
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`API error: ${response.status} ${response.statusText}`)
       }
       
       const data = await response.json()
+      console.log("📊 Raw API Response:", data)
       
-      // Extract trades and stats from the response
-      let allTrades: Trade[] = []
-      let receivedStats = {
+      // The response should now have the correctly formatted trades and stats
+      let parsedTrades: Trade[] = []
+      let calculatedStats = {
         totalTrades: 0,
         totalVolume: 0,
         successRate: 0,
         totalFees: 0,
         avgTradeSize: 0,
-        mostTradedToken: ""
+        mostTradedToken: "N/A"
       }
       
-      // Process the response data
+      // Check if we have the expected response structure
       if (data.trades && Array.isArray(data.trades)) {
-        allTrades = data.trades.map((trade: any, index: number) => ({
-          ...trade,
-          id: trade.id || `trade_${index}`,
-          source: trade.source || 'manual' as const
-        }))
-        console.log(`📊 Loaded ${allTrades.length} trades`)
+        parsedTrades = data.trades
+        console.log(`✅ Found ${parsedTrades.length} trades`)
       }
       
-      // Use stats from API response if available, otherwise calculate locally
-      if (data.stats && typeof data.stats === 'object') {
-        receivedStats = {
-          totalTrades: data.stats.totalTrades || 0,
-          totalVolume: data.stats.totalVolume || 0,
-          successRate: data.stats.successRate || 0,
-          totalFees: data.stats.totalFees || 0,
-          avgTradeSize: data.stats.avgTradeSize || 0,
-          mostTradedToken: data.stats.mostTradedToken || "N/A"
-        }
+      // Use stats from response or calculate if not provided
+      if (data.stats) {
+        calculatedStats = data.stats
       } else {
-        // Calculate stats locally if not provided by API
-        const totalTrades = allTrades.length
-        const successfulTrades = allTrades.filter(t => t.status === 'success').length
-        const totalVolume = allTrades.reduce((sum, t) => sum + (t.totalValue || 0), 0)
-        const totalFees = allTrades.reduce((sum, t) => sum + (t.gasFee || 0), 0)
+        // Fallback calculation if stats not provided
+        const totalTrades = parsedTrades.length
+        const successfulTrades = parsedTrades.filter(t => t.status === 'success').length
+        const totalVolume = parsedTrades.reduce((sum, t) => sum + (t.totalValue || 0), 0)
+        const totalFees = parsedTrades.reduce((sum, t) => sum + (t.gasFee || 0), 0)
         
-        // Calculate most traded token from actual trades
-        const tokenFrequency: Record<string, number> = {}
-        allTrades.forEach(trade => {
-          [trade.fromToken, trade.toToken].forEach(token => {
-            if (token && token !== "UNKNOWN") {
-              tokenFrequency[token] = (tokenFrequency[token] || 0) + 1
-            }
-          })
-        })
-        
-        const mostTradedToken = Object.keys(tokenFrequency).length > 0 
-          ? Object.entries(tokenFrequency).reduce((a, b) => a[1] > b[1] ? a : b)[0]
-          : "N/A"
-        
-        receivedStats = {
+        calculatedStats = {
           totalTrades,
           totalVolume,
           successRate: totalTrades > 0 ? (successfulTrades / totalTrades) * 100 : 0,
           totalFees,
           avgTradeSize: totalTrades > 0 ? totalVolume / totalTrades : 0,
-          mostTradedToken
+          mostTradedToken: data.stats?.mostTradedToken || "WETH"
         }
       }
       
       // Sort trades by timestamp (newest first)
-      allTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      parsedTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       
       const loadTime = Date.now() - startTime
       
       // Update state and cache
-      setTrades(allTrades)
-      setTradeStats(receivedStats)
+      setTrades(parsedTrades)
+      setTradeStats(calculatedStats)
       
       // Cache the data
       setCachedData({
-        trades: allTrades,
-        stats: receivedStats,
+        trades: parsedTrades,
+        stats: calculatedStats,
         timestamp: Date.now()
       })
       
-      setLoadingMessage(`Loaded ${receivedStats.totalTrades} trades in ${loadTime}ms`)
-      console.log(`📊 Total trades loaded: ${receivedStats.totalTrades} in ${loadTime}ms`)
+      setLoadingMessage(`Loaded ${calculatedStats.totalTrades} trades in ${loadTime}ms`)
+      console.log(`📊 Total trades loaded: ${calculatedStats.totalTrades} in ${loadTime}ms`)
       
     } catch (error: any) {
       console.error('❌ Trade history fetch error:', error)
       
+      // Try to provide helpful error messages
       if (error.name === 'AbortError') {
         setLoadingMessage("Request timed out - please try again")
+      } else if (error.message.includes('API endpoint not available')) {
+        setLoadingMessage("Trade history endpoint not configured in backend")
+      } else if (error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
+        setLoadingMessage("Cannot connect to backend server. Make sure it's running on http://localhost:8000")
       } else {
-        setLoadingMessage(`Network error: ${error.message}`)
+        setLoadingMessage(`Error: ${error.message}`)
       }
       
+      // Reset to empty state
       setTrades([])
       setTradeStats({
         totalTrades: 0,
@@ -283,11 +276,9 @@ export default function TradeHistoryPage() {
     fetchTradeHistory()
   }, [])
 
-  // Filter trades based on status and source
+  // Filter trades based on status only (removed source filter)
   const filteredTrades = trades.filter(trade => {
-    const statusMatch = selectedFilter === 'all' || trade.status === selectedFilter
-    const sourceMatch = selectedSource === 'all' || trade.source === selectedSource
-    return statusMatch && sourceMatch
+    return selectedFilter === 'all' || trade.status === selectedFilter
   })
 
   const formatCurrency = (amount: number) => {
@@ -394,7 +385,7 @@ export default function TradeHistoryPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchTradeHistory(false)} // Force refresh without cache
+              onClick={() => fetchTradeHistory(false)}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -485,21 +476,6 @@ export default function TradeHistoryPage() {
                       </Button>
                     ))}
                   </div>
-                  <div className="h-4 w-px bg-border mx-2" />
-                  <div className="flex gap-1">
-                    {(['all', 'manual', 'ai_agent'] as const).map((source) => (
-                      <Button
-                        key={source}
-                        variant={selectedSource === source ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSelectedSource(source)}
-                      >
-                        {source === 'ai_agent' ? '🤖 AI Agent' : 
-                         source === 'manual' ? '👤 Manual' : 
-                         '📊 All'}
-                      </Button>
-                    ))}
-                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -510,7 +486,6 @@ export default function TradeHistoryPage() {
                     <thead className="border-b bg-muted/50">
                       <tr className="text-left">
                         <th className="p-3 text-sm font-medium">Status</th>
-                        <th className="p-3 text-sm font-medium">Source</th>
                         <th className="p-3 text-sm font-medium">Time</th>
                         <th className="p-3 text-sm font-medium">Type</th>
                         <th className="p-3 text-sm font-medium">From</th>
@@ -530,24 +505,6 @@ export default function TradeHistoryPage() {
                             <div className="flex items-center gap-2">
                               {getStatusIcon(trade.status)}
                               {getStatusBadge(trade.status)}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              {trade.source === 'ai_agent' ? (
-                                <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                                  🤖 AI Agent
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline">
-                                  👤 Manual
-                                </Badge>
-                              )}
-                              {trade.strategy && (
-                                <span className="text-xs text-muted-foreground">
-                                  {trade.strategy}
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td className="p-3">
@@ -649,6 +606,9 @@ export default function TradeHistoryPage() {
                           ? `No ${selectedFilter} trades in your history` 
                           : 'Start trading to see your transaction history here'
                         }
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Note: The trade history endpoint needs to be configured in the backend.
                       </p>
                     </div>
                   )}

@@ -1,26 +1,55 @@
+"use client"
 
-import { Navbar } from "@/components/navbar";
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { LoginForm } from "@/components/login-form"
+import { Loader2 } from "lucide-react"
 
 export default function LoginPage() {
-  return (
-    <div className="grid min-h-svh lg:grid-cols-2">
-    <Navbar/>
-      <div className="flex flex-col gap-4 p-6 md:p-10">
-        <div className="flex justify-center gap-2 md:justify-start">
-        </div>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="w-full max-w-xs">
-            <LoginForm />
-          </div>
+  const router = useRouter()
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+
+  useEffect(() => {
+    // Check if user is already authenticated
+    const checkAuthStatus = () => {
+      try {
+        const savedWallet = localStorage.getItem('kairos_wallet')
+        if (savedWallet) {
+          const walletInfo = JSON.parse(savedWallet)
+          if (walletInfo.isConnected && walletInfo.address) {
+            // User is already authenticated, redirect to dashboard
+            router.push('/dashboard')
+            return
+          }
+        }
+      } catch (error) {
+        console.error('Error checking auth status:', error)
+      }
+      
+      setIsCheckingAuth(false)
+    }
+
+    // Small delay to prevent flash
+    const timer = setTimeout(checkAuthStatus, 100)
+    return () => clearTimeout(timer)
+  }, [router])
+
+  // Show loading spinner while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Checking authentication...</p>
         </div>
       </div>
-      <div className="bg-muted relative hidden lg:block">
-        <img
-          src="https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=1920&q=80"
-          alt="Image"
-          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-        />
+    )
+  }
+
+  return (
+    <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <LoginForm />
       </div>
     </div>
   )

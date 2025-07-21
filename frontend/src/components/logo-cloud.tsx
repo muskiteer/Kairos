@@ -3,15 +3,14 @@ import Marquee from "./ui/marquee";
 
 function LogoCloud(props: HTMLAttributes<HTMLDivElement>) {
   const partners = [
+    "Kairos AI",
     "Recall",
-    "Vincent",
+    "Vincent AI",
     "Lit Protocol", 
     "Gemini AI",
-    "Kairos",
     "Supabase",
-    "Qdrant",
     "CoinGecko",
-    "TAAPI"
+    "Uniswap",
   ];
 
   return (

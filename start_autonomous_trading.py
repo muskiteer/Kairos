@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+#test:ignore
+
 """
 Enhanced Kairos Autonomous Trading Agent - Variable Duration Session Starter
 Now with enhanced AI, multi-chain support, and comprehensive database integration

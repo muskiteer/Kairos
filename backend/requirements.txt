@@ -7,6 +7,11 @@ colorama==0.4.6
 # AI and Language Models
 google-generativeai
 
+feedparser
+setuptools
+
+reports
+
 # FastAPI and Web Server
 fastapi==0.115.6
 uvicorn[standard]==0.34.0

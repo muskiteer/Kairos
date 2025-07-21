@@ -1,1156 +1,488 @@
 #!/usr/bin/env python3
 """
-Powerful Gemini AI Trading Agent
-A robust cryptocurrency trading assistant with complete Recall API integration
+Powerful Gemini AI Trading Agent - Enhanced with Assistant Mode
+Supports both autonomous trading decisions and interactive assistant chat
 """
 
 import os
 import json
-import re
 import google.generativeai as genai
 from dotenv import load_dotenv
 import colorama
-from colorama import Fore, Style
+from colorama import Fore
+from typing import Optional, Dict, List
 from datetime import datetime
-from typing import Optional
+import requests
 
-# Import your existing API functions
-from api.portfolio import get_portfolio
-from api.token_balance import get_token_balance
-from api.token_price import get_token_price_json
-from api.trades_history import get_portfolio as get_trades_history
-from api.execute import trade_exec, token_addresses
-from agent.coinpanic_api import CoinPanicAPI, get_crypto_news, get_trending_news, get_currency_news, get_bullish_news, get_bearish_news
-from utils.api_manager import api_manager
+# Import token addresses if available
+try:
+    from api.execute import token_addresses
+except ImportError:
+    # Fallback token addresses
+    token_addresses = {
+        'ETH': '0x0000000000000000000000000000000000000000',
+        'USDC': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+        'SOL': 'So11111111111111111111111111111111111111112',
+        'MATIC': '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0',
+        'UNI': '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+        'LINK': '0x514910771AF9Ca656af840dff83E8264EcF986CA',
+        'AAVE': '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9',
+        'USDbC': '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
+        'DAI': '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+        'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    }
 
-# Initialize colorama for colored output
 colorama.init()
 
 class PowerfulGeminiTradingAgent:
-    """Advanced Gemini AI trading agent with full API access and intelligent analysis"""
-    
+    """Advanced Gemini AI trading agent with autonomous and assistant capabilities"""
+
     def __init__(self, user_id: str = "default", gemini_api_key: Optional[str] = None):
-        """Initialize the powerful agent with full capabilities"""
-        # Load environment variables
         load_dotenv()
-        
-        # Store user ID for dynamic API key retrieval
         self.user_id = user_id
-        
-        # Setup Gemini AI with maximum capabilities
         api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("❌ GEMINI_API_KEY not found in .env file")
-        
+
         genai.configure(api_key=api_key)
-        
-        # Initialize CoinPanic API with dynamic key support
-        self.coinpanic_api = None
-        # Use the most powerful model available
         self.model = genai.GenerativeModel(
-            'gemini-1.5-pro',  # Using the most powerful model
+            'gemini-1.5-pro',
             generation_config=genai.types.GenerationConfig(
-                temperature=0.7,  # Balanced creativity and accuracy
-                max_output_tokens=8192,  # Maximum response length
+                temperature=0.7,
+                max_output_tokens=8192,
                 top_p=0.8,
-                top_k=40
+                top_k=40,
+                response_mime_type="application/json"
             )
         )
         
-        # Store available tools and APIs
-        self.available_apis = {
-            'portfolio': self.get_portfolio_data,
-            'token_balance': self.get_token_balance_data,
-            'token_price': self.get_token_price_data,
-            'trades_history': self.get_trades_history_data,
-            'crypto_news': self.get_crypto_news_data,
-            'execute_trade': self.execute_trade_now
-        }
+        # Assistant mode model (for conversational responses)
+        self.assistant_model = genai.GenerativeModel(
+            'gemini-1.5-pro',
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.6,
+                max_output_tokens=4096,
+                top_p=0.9,
+                top_k=30
+            )
+        )
         
-        print(f"{Fore.GREEN}✅ POWERFUL Gemini AI Trading Agent initialized with FULL CAPABILITIES{Style.RESET_ALL}")
-    
-    async def initialize_dynamic_apis(self):
-        """Initialize APIs with dynamic keys from user profile"""
-        try:
-            api_keys = await api_manager.get_user_api_keys(self.user_id)
-            coinpanic_key = api_keys.get("coinpanic_api_key")
-            
-            if coinpanic_key:
-                self.coinpanic_api = CoinPanicAPI(api_key=coinpanic_key)
-                print(f"{Fore.GREEN}✅ CoinPanic API initialized with user key{Style.RESET_ALL}")
-            else:
-                print(f"{Fore.YELLOW}⚠️ No CoinPanic API key found for user {self.user_id}{Style.RESET_ALL}")
-                self.coinpanic_api = CoinPanicAPI()  # Use fallback
-                
-        except Exception as e:
-            print(f"{Fore.RED}❌ Error initializing dynamic APIs: {e}{Style.RESET_ALL}")
-            self.coinpanic_api = CoinPanicAPI()  # Use fallback
-        print(f"{Fore.CYAN}🚀 Complete Recall API & CoinPanic News integration enabled{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}⚡ Ready to analyze, trade, and provide expert insights!{Style.RESET_ALL}")
-        print(f"{Fore.MAGENTA}🧠 Using Gemini-1.5-Pro with maximum intelligence settings{Style.RESET_ALL}")
-    
-    def get_portfolio_data(self):
-        """Get comprehensive portfolio information with enhanced error handling"""
-        try:
-            print(f"{Fore.YELLOW}📊 Fetching portfolio data...{Style.RESET_ALL}")
-            portfolio = get_portfolio(user_id=self.user_id)
-            
-            if isinstance(portfolio, dict) and 'error' not in portfolio:
-                print(f"{Fore.GREEN}✅ Portfolio data retrieved successfully{Style.RESET_ALL}")
-            
-            return portfolio
-        except Exception as e:
-            error_msg = f"Failed to get portfolio: {str(e)}"
-            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-            return {"error": error_msg}
-    
-    def get_token_balance_data(self, token):
-        """Get token balance with comprehensive validation"""
-        try:
-            print(f"{Fore.YELLOW}💰 Fetching {token} balance...{Style.RESET_ALL}")
-            balance = get_token_balance(token)
-            
-            if isinstance(balance, dict) and 'amount' in balance:
-                print(f"{Fore.GREEN}✅ {token} balance retrieved: {balance['amount']}{Style.RESET_ALL}")
-            
-            return balance
-        except Exception as e:
-            error_msg = f"Failed to get {token} balance: {str(e)}"
-            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-            return {"error": error_msg}
-    
-    def get_token_price_data(self, symbol):
-        """Get real-time token price with market data"""
-        try:
-            print(f"{Fore.YELLOW}💹 Fetching {symbol} price data...{Style.RESET_ALL}")
-            price_data = get_token_price_json(symbol)
-            
-            if isinstance(price_data, dict) and 'price' in price_data:
-                print(f"{Fore.GREEN}✅ {symbol} price retrieved: ${price_data['price']}{Style.RESET_ALL}")
-            
-            return price_data
-        except Exception as e:
-            error_msg = f"Failed to get {symbol} price: {str(e)}"
-            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-            return {"error": error_msg}
-    
-    def get_trades_history_data(self):
-        """Get comprehensive trading history using user-specific API key"""
-        try:
-            print(f"{Fore.YELLOW}📜 Fetching trading history...{Style.RESET_ALL}")
-            history = get_trades_history(user_id=self.user_id)
-            
-            if isinstance(history, dict) and 'error' not in history:
-                print(f"{Fore.GREEN}✅ Trading history retrieved successfully{Style.RESET_ALL}")
-            
-            return history
-        except Exception as e:
-            error_msg = f"Failed to get trades history: {str(e)}"
-            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-            return {"error": error_msg}
-    
-    async def get_crypto_news_data(self, currencies=None, limit=10, news_type="trending"):
-        """Get comprehensive cryptocurrency news with sentiment analysis using dynamic API"""
-        try:
-            print(f"{Fore.YELLOW}📰 Fetching {news_type} crypto news...{Style.RESET_ALL}")
-            
-            # Ensure CoinPanic API is initialized
-            if not self.coinpanic_api:
-                await self.initialize_dynamic_apis()
-            
-            # Use the instance method from CoinPanicAPI class
-            if news_type == "trending":
-                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="hot")
-            elif news_type == "bullish":
-                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="bullish")
-            elif news_type == "bearish":
-                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="bearish")
-            elif news_type == "currency" and currencies:
-                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="hot")
-            else:
-                news_data = self.coinpanic_api.get_crypto_news(currencies=currencies, limit=limit, filter_type="new")
-            
-            if isinstance(news_data, dict) and 'news' in news_data:
-                print(f"{Fore.GREEN}✅ Retrieved {len(news_data['news'])} news items{Style.RESET_ALL}")
-            
-            return news_data
-        except Exception as e:
-            error_msg = f"Failed to get crypto news: {str(e)}"
-            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-            return {"error": error_msg}
-    
-    def execute_trade_now(self, from_token, to_token, amount):
-        """Execute a trade immediately with comprehensive validation and reporting"""
-        try:
-            from_token = from_token.upper()
-            to_token = to_token.upper()
-            
-            print(f"{Fore.YELLOW}🔥 INITIATING REAL TRADE EXECUTION{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}📊 Trade Request: {amount} {from_token} → {to_token}{Style.RESET_ALL}")
-            
-            # Comprehensive validation
-            if from_token not in token_addresses or to_token not in token_addresses:
-                error_msg = f"Unsupported token(s): {from_token}, {to_token}"
-                print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-                return {
-                    "error": error_msg,
-                    "supported_tokens": list(token_addresses.keys())
-                }
-            
-            # Check balance with detailed feedback
-            print(f"{Fore.YELLOW}💰 Checking {from_token} balance...{Style.RESET_ALL}")
-            balance_data = self.get_token_balance_data(from_token)
-            
-            if 'error' in balance_data:
-                print(f"{Fore.RED}❌ Balance check failed: {balance_data['error']}{Style.RESET_ALL}")
-                return balance_data
-            
-            current_balance = balance_data.get('amount', 0)
-            print(f"{Fore.GREEN}✅ Current {from_token} balance: {current_balance}{Style.RESET_ALL}")
-            
-            if current_balance < amount:
-                error_msg = f"Insufficient balance. Available: {current_balance} {from_token}, Required: {amount}"
-                print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-                return {
-                    "error": error_msg,
-                    "current_balance": current_balance,
-                    "required": amount
-                }
-            
-            # Get token addresses and execute trade
-            from_address = token_addresses[from_token]
-            to_address = token_addresses[to_token]
-            
-            print(f"{Fore.RED}⚡ EXECUTING TRADE VIA RECALL API...{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}📡 From Address: {from_address}{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}📡 To Address: {to_address}{Style.RESET_ALL}")
-            
-            # Execute the actual trade
-            result = trade_exec(from_address, to_address, amount)
-            
-            if result and 'error' not in result:
-                print(f"{Fore.GREEN}🎉 TRADE EXECUTED SUCCESSFULLY!{Style.RESET_ALL}")
-                print(f"{Fore.GREEN}✅ Transaction completed via Recall API{Style.RESET_ALL}")
-                
-                # Add timestamp and trade details
-                result['executed_at'] = datetime.now().isoformat()
-                result['trade_details'] = {
-                    'from_token': from_token,
-                    'to_token': to_token,
-                    'amount': amount,
-                    'from_address': from_address,
-                    'to_address': to_address
-                }
-            else:
-                print(f"{Fore.RED}❌ Trade execution failed{Style.RESET_ALL}")
-                if result:
-                    print(f"{Fore.RED}Error: {result.get('error', 'Unknown error')}{Style.RESET_ALL}")
-            
-            return result
-            
-        except Exception as e:
-            error_msg = f"Critical error during trade execution: {str(e)}"
-            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-            return {"error": error_msg}
-    
-    def analyze_user_intent_with_ai(self, message):
-        """Use Gemini AI to analyze user intent and extract parameters"""
-        try:
-            analysis_prompt = f"""
-Analyze this user message for cryptocurrency trading intent:
+        print(f"{Fore.GREEN}✅ Gemini AI Agent initialized with FULL CAPABILITIES{Fore.RESET}")
 
-Message: "{message}"
-
-Available actions:
-1. execute_trade - for trading requests
-2. portfolio - for portfolio/balance info
-3. token_balance - for specific token balance
-4. token_price - for price information
-5. trades_history - for trading history
-6. crypto_news - for cryptocurrency news
-7. help - for help requests
-8. general_chat - for general conversation
-
-Available tokens: {', '.join(token_addresses.keys())}
-
-If it's a trading request, extract:
-- from_token (token to sell)
-- to_token (token to buy)
-- amount (quantity)
-
-If it's a news request, extract:
-- news_type (trending, bullish, bearish, currency)
-- currencies (if specific)
-- limit (default 5)
-
-If it's a price or balance request, extract:
-- token (symbol)
-
-Return JSON format:
-{{
-    "intent": "action_name",
-    "confidence": 0.95,
-    "parameters": {{
-        "key": "value"
-    }}
-}}
-"""
-            
-            response = self.model.generate_content(analysis_prompt)
-            
-            if response and response.text:
-                try:
-                    # Extract JSON from response
-                    json_str = response.text
-                    if '```json' in json_str:
-                        json_str = json_str.split('```json')[1].split('```')[0]
-                    elif '```' in json_str:
-                        json_str = json_str.split('```')[1].split('```')[0]
-                    
-                    analysis = json.loads(json_str.strip())
-                    return analysis
-                except:
-                    # Fallback to simple analysis
-                    return self.simple_intent_analysis(message)
-            
-            return self.simple_intent_analysis(message)
-            
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠️ AI analysis failed, using fallback: {str(e)}{Style.RESET_ALL}")
-            return self.simple_intent_analysis(message)
-    
-    def simple_intent_analysis(self, message):
-        """Fallback simple intent analysis"""
-        message_lower = message.lower()
-        
-        # Trade patterns
-        trade_patterns = [
-            r'(?:buy|trade|swap|exchange|convert).*?(\d+\.?\d*)\s*(usdc|weth|wbtc|dai|usdt|uni|link|eth).*?(?:to|for|of|worth of|into)\s*(usdc|weth|wbtc|dai|usdt|uni|link|eth)',
-            r'(\d+\.?\d*)\s*(usdc|weth|wbtc|dai|usdt|uni|link|eth)\s+(?:to|for|into)\s+(usdc|weth|wbtc|dai|usdt|uni|link|eth)',
-            r'(?:buy|get)\s+(usdc|weth|wbtc|dai|usdt|uni|link|eth)\s+(?:with|using)\s+(\d+\.?\d*)\s*(usdc|weth|wbtc|dai|usdt|uni|link|eth)'
-        ]
-        
-        for pattern in trade_patterns:
-            match = re.search(pattern, message_lower)
-            if match:
-                groups = match.groups()
-                if len(groups) >= 3:
-                    amount = float(groups[0])
-                    from_token = groups[1].upper()
-                    to_token = groups[2].upper()
-                    return {
-                        "intent": "execute_trade",
-                        "confidence": 0.9,
-                        "parameters": {
-                            "from_token": from_token,
-                            "to_token": to_token,
-                            "amount": amount
-                        }
-                    }
-        
-        # Other intents
-        if any(word in message_lower for word in ['news', 'latest', 'updates', 'trending', 'bullish', 'bearish']):
-            news_type = "trending"
-            if 'bullish' in message_lower:
-                news_type = "bullish"
-            elif 'bearish' in message_lower:
-                news_type = "bearish"
-            
-            return {
-                "intent": "crypto_news",
-                "confidence": 0.8,
-                "parameters": {"news_type": news_type, "limit": 5}
-            }
-        
-        elif any(word in message_lower for word in ['portfolio', 'holdings', 'balance', 'wallet']):
-            return {
-                "intent": "portfolio",
-                "confidence": 0.8,
-                "parameters": {}
-            }
-        
-        elif any(word in message_lower for word in ['price', 'cost', 'value', 'worth']):
-            for token in token_addresses.keys():
-                if token.lower() in message_lower:
-                    return {
-                        "intent": "token_price",
-                        "confidence": 0.8,
-                        "parameters": {"token": token}
-                    }
-        
-        elif any(word in message_lower for word in ['history', 'trades', 'transactions']):
-            return {
-                "intent": "trades_history",
-                "confidence": 0.8,
-                "parameters": {}
-            }
-        
-        elif any(word in message_lower for word in ['help', 'what can you do', 'commands']):
-            return {
-                "intent": "help",
-                "confidence": 0.9,
-                "parameters": {}
-            }
-        
-        return {
-            "intent": "general_chat",
-            "confidence": 0.5,
-            "parameters": {}
-        }
-    
-    def format_data_for_display(self, data_type, data, additional_context=None):
-        """Format API data for beautiful presentation"""
-        if isinstance(data, dict) and 'error' in data:
-            return f"❌ {data_type.title()} Error: {data['error']}"
-        
-        if data_type == "portfolio":
-            return self._format_portfolio(data)
-        elif data_type == "token_balance":
-            return self._format_token_balance(data, additional_context)
-        elif data_type == "token_price":
-            return self._format_token_price(data, additional_context)
-        elif data_type == "trades_history":
-            return self._format_trades_history(data)
-        elif data_type == "crypto_news":
-            return self._format_crypto_news(data)
-        elif data_type == "trade_result":
-            return self._format_trade_result(data, additional_context)
-        else:
-            return json.dumps(data, indent=2)
-    
-    def _format_portfolio(self, portfolio_data):
-        """Format portfolio data beautifully"""
-        display = "\n📊 YOUR PORTFOLIO OVERVIEW\n" + "="*50 + "\n"
-        
-        balances = []
-        if isinstance(portfolio_data, dict):
-            if 'balances' in portfolio_data:
-                balances = portfolio_data['balances']
-            elif 'data' in portfolio_data:
-                balances = portfolio_data['data']
-        elif isinstance(portfolio_data, list):
-            balances = portfolio_data
-        
-        if balances:
-            total_value = 0
-            for balance in balances:
-                if isinstance(balance, dict):
-                    symbol = balance.get('symbol', 'Unknown')
-                    amount = balance.get('amount', balance.get('balance', 0))
-                    value = balance.get('value', 0)
-                    
-                    display += f"💰 {symbol:<8} | Balance: {amount:>15,.6f}"
-                    if value > 0:
-                        display += f" | Value: ${value:>10,.2f}"
-                        total_value += value
-                    display += "\n"
-            
-            display += "-" * 50 + "\n"
-            if total_value > 0:
-                display += f"� TOTAL PORTFOLIO VALUE: ${total_value:,.2f}\n"
-        else:
-            display += "📭 No balances found or portfolio is empty\n"
-        
-        display += "="*50
-        return display
-    
-    def _format_token_balance(self, balance_data, token=None):
-        """Format token balance beautifully"""
-        if not token:
-            token = balance_data.get('symbol', 'Unknown')
-        
-        amount = balance_data.get('amount', 0)
-        display = f"\n💳 {token} BALANCE\n"
-        display += "="*30 + "\n"
-        display += f"🪙 Amount: {amount:,.6f} {token}\n"
-        display += "="*30
-        return display
-    
-    def _format_token_price(self, price_data, token=None):
-        """Format token price beautifully"""
-        if 'price' not in price_data:
-            return f"❌ Price data not available for {token}"
-        
-        price = price_data['price']
-        display = f"\n💹 {token} PRICE DATA\n"
-        display += "="*35 + "\n"
-        display += f"💵 Current Price: ${price:,.4f}\n"
-        
-        if 'change24h' in price_data:
-            change = price_data['change24h']
-            emoji = "📈" if change > 0 else "📉"
-            display += f"{emoji} 24h Change: {change:+.2f}%\n"
-        
-        display += f"🕐 Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        display += "="*35
-        return display
-    
-    def _format_trades_history(self, history_data):
-        """Format trading history beautifully"""
-        display = "\n📜 TRADING HISTORY\n"
-        display += "="*60 + "\n"
-        
-        trades = []
-        if isinstance(history_data, dict):
-            if 'trades' in history_data:
-                trades = history_data['trades']
-            elif 'data' in history_data:
-                trades = history_data['data']
-        elif isinstance(history_data, list):
-            trades = history_data
-        
-        if trades:
-            for i, trade in enumerate(trades[:10], 1):  # Show last 10 trades
-                if isinstance(trade, dict):
-                    display += f"🔄 Trade #{i}\n"
-                    display += f"   📅 Date: {trade.get('date', 'Unknown')}\n"
-                    display += f"   💱 Pair: {trade.get('from_token', 'Unknown')} → {trade.get('to_token', 'Unknown')}\n"
-                    display += f"   � Amount: {trade.get('amount', 0)}\n"
-                    display += f"   📊 Status: {trade.get('status', 'Unknown')}\n"
-                    display += "-" * 40 + "\n"
-        else:
-            display += "📭 No trading history found\n"
-        
-        display += "="*60
-        return display
-    
-    def _format_crypto_news(self, news_data):
-        """Format cryptocurrency news beautifully"""
-        if 'news' not in news_data:
-            return "❌ No news data available"
-        
-        news_items = news_data['news']
-        display = f"\n📰 CRYPTOCURRENCY NEWS ({len(news_items)} items)\n"
-        display += "="*70 + "\n"
-        
-        for i, item in enumerate(news_items, 1):
-            display += f"📍 {i}. {item.get('title', 'No title')}\n"
-            
-            # Add source and time
-            source = item.get('source', 'Unknown')
-            published = item.get('published_at', '')
-            if published:
-                try:
-                    # Simple time formatting
-                    display += f"   📡 {source} | {published[:10]}\n"
-                except:
-                    display += f"   📡 {source}\n"
-            
-            # Add currencies if available
-            currencies = item.get('currencies', [])
-            if currencies:
-                currency_str = ', '.join(currencies)
-                display += f"   🪙 Related: {currency_str}\n"
-            
-            # Add sentiment
-            votes = item.get('votes', {})
-            positive = votes.get('positive', 0)
-            negative = votes.get('negative', 0)
-            if positive > 0 or negative > 0:
-                display += f"   📊 Sentiment: +{positive}/-{negative}\n"
-            
-            display += "-" * 50 + "\n"
-        
-        display += "="*70
-        return display
-    
-    def _format_trade_result(self, result, context):
-        """Format trade execution result beautifully"""
-        if 'error' in result:
-            return f"❌ TRADE FAILED: {result['error']}"
-        
-        from_token = context.get('from_token', 'Unknown')
-        to_token = context.get('to_token', 'Unknown')
-        amount = context.get('amount', 0)
-        
-        display = "\n🎉 TRADE EXECUTED SUCCESSFULLY!\n"
-        display += "="*50 + "\n"
-        display += f"📊 TRADE DETAILS:\n"
-        display += f"   💸 Sold: {amount} {from_token}\n"
-        display += f"   💰 Bought: {to_token}\n"
-        
-        if 'toTokenAmount' in result:
-            display += f"   📈 Received: {result['toTokenAmount']} {to_token}\n"
-        
-        if 'txHash' in result:
-            display += f"   🔗 Transaction: {result['txHash'][:20]}...\n"
-        
-        if 'gasUsed' in result:
-            display += f"   ⛽ Gas Used: {result['gasUsed']}\n"
-        
-        if 'executed_at' in result:
-            display += f"   🕐 Executed: {result['executed_at'][:19]}\n"
-        
-        display += "\n✅ Trade completed via Recall API!"
-        display += "\n" + "="*50
-        return display
-    
-    def send_message(self, message):
-        """Process user message with full AI analysis and API integration"""
-        try:
-            print(f"\n{Fore.BLUE}🧠 Processing your request...{Style.RESET_ALL}")
-            
-            # Step 1: Analyze user intent with AI
-            intent_analysis = self.analyze_user_intent_with_ai(message)
-            intent = intent_analysis.get('intent', 'general_chat')
-            params = intent_analysis.get('parameters', {})
-            confidence = intent_analysis.get('confidence', 0.5)
-            
-            print(f"{Fore.CYAN}📋 Intent: {intent} (Confidence: {confidence:.0%}){Style.RESET_ALL}")
-            
-            # Step 2: Execute appropriate API calls
-            api_data = None
-            formatted_display = ""
-            
-            if intent == 'execute_trade':
-                from_token = params.get('from_token')
-                to_token = params.get('to_token')
-                amount = params.get('amount')
-                
-                if from_token and to_token and amount:
-                    print(f"{Fore.RED}🔥 EXECUTING TRADE: {amount} {from_token} → {to_token}{Style.RESET_ALL}")
-                    api_data = self.execute_trade_now(from_token, to_token, amount)
-                    formatted_display = self.format_data_for_display('trade_result', api_data, params)
-                else:
-                    api_data = {"error": "Invalid trade parameters"}
-                    formatted_display = "❌ Could not parse trade request"
-            
-            elif intent == 'portfolio':
-                api_data = self.get_portfolio_data()
-                formatted_display = self.format_data_for_display('portfolio', api_data)
-            
-            elif intent == 'token_balance':
-                token = params.get('token')
-                if token:
-                    api_data = self.get_token_balance_data(token)
-                    formatted_display = self.format_data_for_display('token_balance', api_data, token)
-                else:
-                    api_data = {"error": "Token not specified"}
-                    formatted_display = "❌ Please specify a token"
-            
-            elif intent == 'token_price':
-                token = params.get('token')
-                if token:
-                    api_data = self.get_token_price_data(token)
-                    formatted_display = self.format_data_for_display('token_price', api_data, token)
-                else:
-                    api_data = {"error": "Token not specified"}
-                    formatted_display = "❌ Please specify a token"
-            
-            elif intent == 'trades_history':
-                api_data = self.get_trades_history_data()
-                formatted_display = self.format_data_for_display('trades_history', api_data)
-            
-            elif intent == 'crypto_news':
-                news_type = params.get('news_type', 'trending')
-                currencies = params.get('currencies', None)
-                limit = params.get('limit', 5)
-                
-                api_data = self.get_crypto_news_data(currencies=currencies, limit=limit, news_type=news_type)
-                formatted_display = self.format_data_for_display('crypto_news', api_data)
-            
-            elif intent == 'help':
-                formatted_display = self._get_help_text()
-            
-            # Step 3: Display formatted data
-            if formatted_display:
-                print(formatted_display)
-            
-            # Step 4: Generate intelligent AI response
-            print(f"\n{Fore.MAGENTA}🤖 Generating AI response...{Style.RESET_ALL}")
-            ai_response = self.generate_ai_response(message, intent, api_data, formatted_display)
-            
-            print(f"\n{Fore.GREEN}🎯 AI TRADING AGENT:{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}{ai_response}{Style.RESET_ALL}")
-            
-        except Exception as e:
-            print(f"{Fore.RED}❌ Error processing message: {str(e)}{Style.RESET_ALL}")
-            
-            # Generate fallback response
-            fallback_response = self.generate_fallback_response(message, str(e))
-            print(f"\n{Fore.YELLOW}🤖 AI TRADING AGENT:{Style.RESET_ALL}")
-            print(f"{Fore.WHITE}{fallback_response}{Style.RESET_ALL}")
-    
-    def generate_pre_trade_response(self, user_message, from_token, to_token, amount):
-        """Generate AI response BEFORE executing trade - analysis and reasoning"""
-        try:
-            # Get current market data for better analysis
-            from_balance = self.get_token_balance_data(from_token)
-            to_price = self.get_token_price_data(to_token)
-            from_price = self.get_token_price_data(from_token)
-            recent_news = self.get_crypto_news_data(currencies=[to_token], limit=3, news_type="trending")
-            
-            pre_trade_prompt = f"""You are an EXPERT cryptocurrency trading advisor. A user wants to execute this trade:
-
-USER REQUEST: "{user_message}"
-
-TRADE DETAILS:
-- Selling: {amount} {from_token}
-- Buying: {to_token}
-
-CURRENT MARKET DATA:
-- {from_token} Balance: {from_balance.get('amount', 0)} {from_token}
-- {from_token} Price: ${from_price.get('price', 0):.4f}
-- {to_token} Price: ${to_price.get('price', 0):.4f}
-
-RECENT {to_token} NEWS:
-{json.dumps(recent_news, indent=2) if recent_news and 'error' not in recent_news else 'No recent news available'}
-
-TASK: Provide a pre-trade analysis response that includes:
-1. 🎯 Trade Assessment - Is this a good trade right now?
-2. 📊 Market Analysis - Current market conditions for both tokens
-3. 💡 Key Insights - What the user should know before executing
-4. ⚠️ Risk Factors - Any risks or considerations
-5. 🚀 Expected Outcome - What to expect from this trade
-
-Be professional, insightful, and educational. This response comes BEFORE the trade execution.
-Use proper formatting with emojis and clear sections.
-Be confident but mention appropriate risks.
-"""
-            
-            response = self.model.generate_content(pre_trade_prompt)
-            
-            if response and response.text:
-                return response.text.strip()
-            else:
-                return f"🎯 **Trade Analysis:** Converting {amount} {from_token} to {to_token}\n\n📊 **Assessment:** Analyzing market conditions and preparing to execute your trade. This trade will convert your {from_token} holdings to {to_token} at current market rates.\n\n⚡ **Status:** Ready to proceed with execution!"
-                
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠️ Pre-trade analysis failed: {str(e)}{Style.RESET_ALL}")
-            return f"🎯 **Trade Request Confirmed:** I'll execute your trade to convert {amount} {from_token} to {to_token}.\n\n⚡ **Status:** Proceeding with trade execution..."
-
-    def generate_post_trade_response(self, user_message, trade_result, from_token, to_token, amount):
-        """Generate AI response AFTER executing trade - based on actual JSON result"""
-        try:
-            # Get updated portfolio and market data after trade
-            updated_portfolio = self.get_portfolio_data()
-            current_prices = {
-                from_token: self.get_token_price_data(from_token),
-                to_token: self.get_token_price_data(to_token)
-            }
-            
-            post_trade_prompt = f"""You are an EXPERT cryptocurrency trading advisor. A trade has just been executed and you have the REAL RESULTS.
-
-ORIGINAL USER REQUEST: "{user_message}"
-
-EXECUTED TRADE:
-- Sold: {amount} {from_token}
-- Bought: {to_token}
-
-ACTUAL TRADE RESULT JSON:
-{json.dumps(trade_result, indent=2)}
-
-UPDATED PORTFOLIO:
-{json.dumps(updated_portfolio, indent=2) if updated_portfolio else 'Portfolio data unavailable'}
-
-CURRENT MARKET PRICES:
-- {from_token}: ${current_prices[from_token].get('price', 0):.4f}
-- {to_token}: ${current_prices[to_token].get('price', 0):.4f}
-
-TASK: Provide a comprehensive post-trade analysis response that includes:
-
-IF TRADE WAS SUCCESSFUL:
-1. 🎉 Trade Confirmation - Celebrate the successful execution
-2. 📊 Trade Details - Exactly what was executed (use real JSON data)
-3. 💰 Financial Impact - How much was received, rates, etc.
-4. 🔍 Performance Analysis - How well did the trade execute?
-5. 📈 Next Steps - Recommendations for portfolio management
-6. 🎯 Market Outlook - What to watch for going forward
-
-IF TRADE FAILED:
-1. ❌ Issue Explanation - What went wrong (use real error data)
-2. 🔍 Problem Analysis - Why it failed
-3. 💡 Solutions - How to fix the issue
-4. ✅ Next Steps - What to do next
-
-Be professional, detailed, and educational. Use the REAL trade result data.
-Reference specific numbers, transaction hashes, gas costs, etc. from the JSON.
-Use proper formatting with emojis and clear sections.
-Provide actionable insights based on the actual execution.
-"""
-            
-            response = self.model.generate_content(post_trade_prompt)
-            
-            if response and response.text:
-                return response.text.strip()
-            else:
-                # Fallback response based on trade result
-                if trade_result and 'error' not in trade_result:
-                    return f"🎉 **Trade Executed Successfully!**\n\n📊 **Result:** Your trade of {amount} {from_token} to {to_token} has been completed successfully!\n\n✅ **Status:** Transaction processed and your portfolio has been updated."
-                else:
-                    error_msg = trade_result.get('error', 'Unknown error') if trade_result else 'Trade execution failed'
-                    return f"❌ **Trade Failed:** {error_msg}\n\n💡 **Next Steps:** Please check your balance and try again, or contact support if the issue persists."
-                
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠️ Post-trade analysis failed: {str(e)}{Style.RESET_ALL}")
-            if trade_result and 'error' not in trade_result:
-                return f"🎉 **Trade Completed!** Your {amount} {from_token} to {to_token} trade has been executed successfully!"
-            else:
-                return f"❌ **Trade Issue:** There was a problem executing your trade. Please check the details and try again."
-
-    def generate_ai_response(self, user_message, intent, api_data, formatted_display):
-        """Generate intelligent AI response based on context"""
-        try:
-            # Create comprehensive prompt for Gemini
-            ai_prompt = f"""You are an EXPERT cryptocurrency trading assistant with FULL ACCESS to live market data and trading capabilities. You just processed a user request and have real data from APIs.
-
-USER REQUEST: "{user_message}"
-
-ANALYSIS RESULTS:
-- Intent: {intent}
-- API Data Available: {api_data is not None}
-- Successful API Call: {'Yes' if api_data and 'error' not in api_data else 'No'}
-
-LIVE API DATA:
-{json.dumps(api_data, indent=2) if api_data else 'No data retrieved'}
-
-FORMATTED DISPLAY:
-{formatted_display}
-
-CONTEXT:
-- You have FULL ACCESS to Recall API for real trading
-- You have FULL ACCESS to CoinPanic API for latest crypto news
-- You can execute real trades, check portfolios, get prices, and provide news
-- You just executed actions and have real results
-- Available tokens: {', '.join(token_addresses.keys())}
-
-RESPONSE GUIDELINES:
-1. Be professional but approachable
-2. Reference the specific data you just retrieved
-3. Provide actionable insights based on the data
-4. If trade was executed, confirm details and next steps
-5. If getting prices/news, analyze and provide market perspective
-6. Be confident - you have real access to trading systems
-7. Mention relevant market trends if news data is available
-8. Always be helpful and educational
-9. Use proper formatting and emojis appropriately
-10. Keep responses focused and valuable
-
-Generate a response that shows you understand the data and can provide expert analysis and guidance."""
-
-            response = self.model.generate_content(ai_prompt)
-            
-            if response and response.text:
-                return response.text.strip()
-            else:
-                return self._generate_basic_response(intent, api_data)
-                
-        except Exception as e:
-            print(f"{Fore.YELLOW}⚠️ AI generation failed: {str(e)}{Style.RESET_ALL}")
-            return self._generate_basic_response(intent, api_data)
-    
-    def _generate_basic_response(self, intent, api_data):
-        """Generate basic response when AI fails"""
-        if intent == 'execute_trade':
-            if api_data and 'error' not in api_data:
-                return "✅ Trade executed successfully! The transaction has been processed via Recall API."
-            else:
-                return "❌ Trade execution failed. Please check the details and try again."
-        
-        elif intent == 'portfolio':
-            if api_data and 'error' not in api_data:
-                return "📊 Your portfolio data has been retrieved successfully. Review your holdings above."
-            else:
-                return "❌ Unable to retrieve portfolio data at this time."
-        
-        elif intent == 'crypto_news':
-            if api_data and 'error' not in api_data:
-                return "📰 Latest cryptocurrency news retrieved! Stay informed about market trends."
-            else:
-                return "❌ Unable to fetch news at this time."
-        
-        else:
-            return "I've processed your request. Let me know if you need anything else!"
-    
-    def generate_fallback_response(self, message, error):
-        """Generate fallback response when everything fails"""
-        try:
-            fallback_prompt = f"""You are a cryptocurrency trading assistant. A user sent this message: "{message}"
-
-There was an error: {error}
-
-Provide a helpful response that:
-1. Acknowledges the request
-2. Explains there was a technical issue
-3. Suggests alternative actions
-4. Remains professional and helpful
-5. Mentions your capabilities (trading, portfolio, news, prices)
-
-Keep it concise and supportive."""
-
-            response = self.model.generate_content(fallback_prompt)
-            
-            if response and response.text:
-                return response.text.strip()
-            else:
-                return "I apologize, but I'm experiencing technical difficulties. Please try again or ask for help with specific commands."
-                
-        except:
-            return "I apologize for the technical issues. I can help you with trading, portfolio management, price checks, and crypto news. Please try your request again."
-    
-    def _get_help_text(self):
-        """Generate comprehensive help text"""
-        return f"""
-🎯 GEMINI AI TRADING AGENT - FULL CAPABILITIES
-
-🔥 REAL TRADING COMMANDS:
-• "Trade 500 USDC to WETH" - Execute real trades
-• "Buy 100 USDC worth of WBTC" - Purchase tokens
-• "Convert 50 USDC to DAI" - Convert between tokens
-
-📊 PORTFOLIO MANAGEMENT:
-• "Show my portfolio" - View all holdings
-• "Check my USDC balance" - Get specific token balance
-• "What's my portfolio worth?" - Get total value
-
-💹 PRICE & MARKET DATA:
-• "What's the price of WETH?" - Get current prices
-• "Show me Bitcoin price" - Check token values
-
-📰 CRYPTOCURRENCY NEWS:
-• "Show me trending crypto news" - Latest market updates
-• "Get bullish news" - Positive market sentiment
-• "Show me bearish news" - Negative market sentiment
-• "Get Bitcoin news" - Token-specific updates
-
-📜 TRADING HISTORY:
-• "Show my trading history" - View past trades
-• "What trades have I made?" - Transaction history
-
-💰 SUPPORTED TOKENS:
-{', '.join(token_addresses.keys())}
-
-🚀 POWERED BY:
-• Recall API - Real trading execution
-• CoinPanic API - Live cryptocurrency news
-• Gemini AI - Intelligent analysis and responses
-
-⚡ I have FULL ACCESS to execute real trades and provide live market data!
-"""
-    
-    def run(self):
-        """Start the interactive chat with enhanced interface"""
-        print(f"\n{Fore.CYAN}🚀 WELCOME TO GEMINI AI TRADING AGENT{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}{'='*80}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}🎯 Your Advanced Cryptocurrency Trading Assistant{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}   Powered by Gemini AI + Recall API + CoinPanic News API{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}{'='*80}{Style.RESET_ALL}")
-        
-        print(f"\n{Fore.YELLOW}⚡ FULL CAPABILITIES:{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  🔥 REAL TRADING EXECUTION via Recall API{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  📊 Live Portfolio & Balance Management{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  💹 Real-time Price Monitoring{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  📰 Latest Cryptocurrency News & Sentiment{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  📜 Complete Trading History Access{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  🧠 Advanced AI Analysis & Insights{Style.RESET_ALL}")
-        
-        print(f"\n{Fore.MAGENTA}💰 SUPPORTED TOKENS:{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  {', '.join(token_addresses.keys())}{Style.RESET_ALL}")
-        
-        print(f"\n{Fore.BLUE}🎯 EXAMPLE COMMANDS:{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  🔥 \"Trade 500 USDC to WETH\" - Execute real trades{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  📊 \"Show my portfolio\" - View all holdings{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  💹 \"What's the price of Bitcoin?\" - Get current prices{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  � \"Show me trending crypto news\" - Latest updates{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}  📜 \"Show my trading history\" - Past transactions{Style.RESET_ALL}")
-        
-        print(f"\n{Fore.RED}⚠️  IMPORTANT: THIS AGENT EXECUTES REAL TRADES!{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}   Always verify trade details before confirming.{Style.RESET_ALL}")
-        
-        print(f"\n{Fore.MAGENTA}Type 'quit', 'exit', or 'bye' to stop{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}{'='*80}{Style.RESET_ALL}")
-        
-        while True:
-            try:
-                print(f"\n{Fore.CYAN}💬 Ready for your command...{Style.RESET_ALL}")
-                user_input = input(f"{Fore.BLUE}You: {Style.RESET_ALL}")
-                
-                if user_input.lower() in ['quit', 'exit', 'bye', 'goodbye', 'stop']:
-                    print(f"\n{Fore.GREEN}👋 Thank you for using Gemini AI Trading Agent!{Style.RESET_ALL}")
-                    print(f"{Fore.CYAN}🚀 Happy trading and stay profitable!{Style.RESET_ALL}")
-                    print(f"{Fore.YELLOW}� Remember: Always do your own research (DYOR)!{Style.RESET_ALL}")
-                    break
-                
-                if user_input.strip() == "":
-                    print(f"{Fore.YELLOW}💭 Please enter a command or question.{Style.RESET_ALL}")
-                    continue
-                
-                # Process the message
-                print(f"\n{Fore.MAGENTA}{'='*80}{Style.RESET_ALL}")
-                self.send_message(user_input)
-                print(f"{Fore.MAGENTA}{'='*80}{Style.RESET_ALL}")
-                
-            except KeyboardInterrupt:
-                print(f"\n\n{Fore.CYAN}👋 Goodbye! Happy trading!{Style.RESET_ALL}")
-                break
-            except Exception as e:
-                print(f"\n{Fore.RED}❌ Unexpected error: {str(e)}{Style.RESET_ALL}")
-                print(f"{Fore.YELLOW}💡 Please try again or type 'help' for assistance.{Style.RESET_ALL}")
-
-    def get_intelligent_analysis(self, portfolio_json: dict, market_prices_json: dict, news_json: dict, strategy_performance_json: dict) -> dict:
+    def get_assistant_response(self, user_query: str, market_data: Dict, portfolio_data: Dict, news_data: Dict) -> str:
         """
-        🧠 CORE KAIROS AI DECISION ENGINE 🧠
-        Analyzes all available data and returns a structured trading decision.
-        This is the heart of the autonomous trading agent.
+        🤖 ASSISTANT MODE: Interactive chat with market analysis capabilities
+        Returns conversational responses for user queries about crypto, markets, portfolio, etc.
         """
-        master_prompt = f"""
-You are Kairos AI, an expert quantitative and qualitative cryptocurrency trading analyst. Your primary directive is to maximize portfolio value through intelligent, risk-managed trades. 
-
-Analyze the following real-time data packet to formulate a single, optimal trading decision.
-
-**🔹 PORTFOLIO STATE:**
-```json
-{json.dumps(portfolio_json, indent=2)}
-```
-
-**🔹 REAL-TIME MARKET PRICES:**
-```json
-{json.dumps(market_prices_json, indent=2)}
-```
-
-**🔹 LATEST CRYPTO NEWS & SENTIMENT:**
-```json
-{json.dumps(news_json, indent=2)}
-```
-
-**🔹 HISTORICAL STRATEGY PERFORMANCE:**
-```json
-{json.dumps(strategy_performance_json, indent=2)}
-```
-
-**🎯 YOUR TASK: INTELLIGENT DECISION FORMULATION**
-
-Based on comprehensive analysis of all data above:
-
-1. **Strategy Selection**: Choose the most appropriate strategy based on current conditions
-2. **Trade Decision**: Decide to BUY, SELL, or HODL
-3. **Dynamic Sizing**: Determine trade size (1-5% of portfolio) based on confidence level
-4. **Risk Assessment**: Evaluate and mitigate potential risks
-5. **Detailed Reasoning**: Provide step-by-step analysis referencing specific data points
-
-**DECISION GUIDELINES:**
-- If news sentiment is bullish (>0.6) for an underweight asset → Consider BUY
-- If news sentiment is bearish (<-0.4) for an overweight asset → Consider SELL  
-- If strategy win_rate > 0.7 → Favor that strategy
-- If strategy win_rate < 0.4 → Avoid that strategy
-- Higher confidence → Larger trade size (up to 5%)
-- Lower confidence → Smaller trade size (1-2%)
-
-**REQUIRED OUTPUT FORMAT:**
-Return ONLY a valid JSON object with this exact structure:
-
-{{
-  "should_trade": true,
-  "confidence_score": 0.85,
-  "strategy_chosen": {{
-    "name": "bullish_eth_accumulation",
-    "type": "momentum",
-    "parameters": {{
-      "target_allocation": 0.3,
-      "risk_level": "medium"
-    }}
-  }},
-  "trade_params": {{
-    "trade_type": "buy",
-    "from_token": "USDC", 
-    "to_token": "ETH",
-    "amount_usd": 500.0,
-    "from_amount": 500.0,
-    "expected_to_amount": 0.14
-  }},
-  "reasoning": [
-    "ETH news sentiment is strongly bullish (0.8) due to upcoming ETF approvals",
-    "Portfolio is underweight ETH at 15% vs target 30%",
-    "Historical 'bullish_momentum' strategy shows 75% win rate",
-    "High confidence trade warrants 5% portfolio allocation"
-  ],
-  "risk_assessment": {{
-    "level": "medium",
-    "factors": ["Market volatility", "News reliability"],
-    "mitigation": "Trade size capped at 5% of portfolio to limit downside exposure"
-  }},
-  "market_analysis": {{
-    "sentiment_score": 0.8,
-    "trend_direction": "bullish",
-    "volatility_level": "moderate"
-  }}
-}}
-
-If you decide NOT to trade, set "should_trade" to false and explain why in "reasoning".
-
-CRITICAL: Return ONLY the JSON object. No additional text or explanations outside the JSON.
-"""
-        
         try:
-            print(f"{Fore.MAGENTA}🧠 Kairos AI: Analyzing market data and portfolio state...{Style.RESET_ALL}")
-            
-            # Send to Gemini for analysis
-            response = self.model.generate_content(master_prompt)
-            
-            # Clean and parse JSON response
-            json_text = response.text.strip()
-            # Remove any markdown formatting
-            json_text = json_text.replace('```json', '').replace('```', '').strip()
-            
-            try:
-                decision = json.loads(json_text)
-                strategy_name = decision.get('strategy_chosen', {}).get('name', 'Unknown')
-                confidence = decision.get('confidence_score', 0) * 100
-                
-                print(f"{Fore.GREEN}✅ Kairos AI Decision: {strategy_name} (Confidence: {confidence:.1f}%){Style.RESET_ALL}")
-                
-                # Log the reasoning
-                reasoning = decision.get('reasoning', [])
-                if reasoning:
-                    print(f"{Fore.CYAN}🤔 AI Reasoning:{Style.RESET_ALL}")
-                    for i, reason in enumerate(reasoning, 1):
-                        print(f"   {i}. {reason}")
-                
-                return decision
-                
-            except json.JSONDecodeError as e:
-                print(f"{Fore.RED}❌ JSON Parse Error: {e}{Style.RESET_ALL}")
-                print(f"Raw response: {json_text[:500]}...")
-                
-                # Return safe fallback decision
-                return {
-                    "should_trade": False,
-                    "confidence_score": 0.0,
-                    "strategy_chosen": {"name": "json_parse_error", "type": "fallback"},
-                    "reasoning": [f"JSON parsing failed: {str(e)}", "Defaulting to HODL for safety"],
-                    "trade_params": None,
-                    "risk_assessment": {"level": "high", "mitigation": "System error - no trade executed"}
-                }
-                
+            # Create comprehensive assistant prompt
+            assistant_prompt = f"""
+            You are Kairos AI Assistant, an expert cryptocurrency trading advisor and market analyst. You have access to real-time market data and can help users with comprehensive crypto-related queries.
+
+            **Your Capabilities:**
+            - Real-time price analysis and market insights
+            - Portfolio analysis and recommendations
+            - Cryptocurrency education and explanations
+            - Latest news and market sentiment analysis
+            - Trading strategy suggestions
+            - Risk assessment and management advice
+
+            **Current Market Data (Live):**
+            {json.dumps(market_data, indent=2)}
+
+            **User's Portfolio:**
+            {json.dumps(portfolio_data, indent=2)}
+
+            **Latest Crypto News:**
+            {json.dumps(news_data, indent=2)}
+
+            **User Query:** "{user_query}"
+
+            **Response Guidelines:**
+            1. **Be Conversational**: Write in a friendly, professional tone
+            2. **Use Real Data**: Reference the actual market data, prices, and portfolio information provided
+            3. **Be Specific**: Give concrete numbers, percentages, and actionable insights
+            4. **Format Well**: Use emojis, headers, and bullet points for readability
+            5. **Stay Current**: Reference the latest news and market conditions
+            6. **Be Educational**: Explain concepts when helpful
+            7. **Show Confidence**: When you have data, be definitive in your analysis
+
+            **Response Format:**
+            - Start with a relevant emoji and clear header
+            - Provide direct answer to the user's question
+            - Include relevant data points and analysis
+            - Add context from news or market conditions when relevant
+            - End with actionable insights or next steps if appropriate
+
+            **Examples of Good Responses:**
+            - For price queries: Include current price, recent changes, market context
+            - For portfolio questions: Analyze holdings, suggest optimizations, show performance
+            - For news questions: Summarize key developments and their potential impact
+            - For trading questions: Provide strategy suggestions with risk considerations
+
+            Please provide a comprehensive, helpful response to the user's query using all available data.
+            """
+
+            # Get response from Gemini
+            response = self.assistant_model.generate_content(assistant_prompt)
+            return response.text
+
         except Exception as e:
-            print(f"{Fore.RED}❌ Kairos AI Analysis Error: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}❌ Assistant Mode Error: {e}{Fore.RESET}")
+            
+            # Provide intelligent fallback based on query type
+            return self._generate_fallback_response(user_query, market_data, portfolio_data, news_data)
+
+    def _generate_fallback_response(self, query: str, market_data: Dict, portfolio_data: Dict, news_data: Dict) -> str:
+        """Generate intelligent fallback responses when Gemini API fails"""
+        
+        query_lower = query.lower()
+        
+        # Price-related queries
+        if any(keyword in query_lower for keyword in ['price', 'cost', 'value', 'worth']):
+            if 'bitcoin' in query_lower or 'btc' in query_lower:
+                btc_price = market_data.get('BTC', 0)
+                return f"📈 **Bitcoin Price Update**\n\n**Current BTC Price:** ${btc_price:,.2f}\n\n*Bitcoin remains the leading cryptocurrency by market cap. This price reflects real-time market conditions.*"
+            
+            elif 'ethereum' in query_lower or 'eth' in query_lower:
+                eth_price = market_data.get('ETH', 0)
+                return f"📈 **Ethereum Price Update**\n\n**Current ETH Price:** ${eth_price:,.2f}\n\n*Ethereum continues to be the leading smart contract platform with strong ecosystem growth.*"
+            
+            else:
+                price_list = "\n".join([f"• **{symbol}**: ${price:,.2f}" for symbol, price in market_data.items() if price > 0])
+                return f"📊 **Current Crypto Prices**\n\n{price_list}\n\n*Prices updated in real-time from CoinGecko*"
+        
+        # Portfolio-related queries
+        elif any(keyword in query_lower for keyword in ['portfolio', 'balance', 'holdings', 'assets']):
+            if portfolio_data and portfolio_data.get('balances'):
+                portfolio_response = "💼 **Your Portfolio Analysis**\n\n"
+                total_value = 0
+                
+                for balance in portfolio_data['balances'][:5]:  # Top 5 holdings
+                    token = balance.get('token', 'Unknown')
+                    amount = balance.get('balance', 0)
+                    price = balance.get('price', 0)
+                    usd_value = balance.get('usd_value', 0)
+                    total_value += usd_value
+                    
+                    percentage = (usd_value / portfolio_data.get('total_value', 1)) * 100
+                    portfolio_response += f"• **{token}**: {amount:.6f} (${usd_value:,.2f} • {percentage:.1f}%)\n"
+                
+                portfolio_response += f"\n💰 **Total Portfolio Value**: ${portfolio_data.get('total_value', 0):,.2f}"
+                portfolio_response += f"\n📈 **Diversification**: {len(portfolio_data.get('balances', []))} different assets"
+                
+                return portfolio_response
+            else:
+                return "💼 **Portfolio Status**\n\nNo portfolio data available. Please ensure your wallet is properly connected to see your holdings and analysis."
+        
+        # News-related queries
+        elif any(keyword in query_lower for keyword in ['news', 'updates', 'happenings', 'trends']):
+            if news_data and news_data.get('results'):
+                news_response = "📰 **Latest Crypto News**\n\n"
+                for i, article in enumerate(news_data['results'][:3], 1):
+                    title = article.get('title', 'No title')
+                    news_response += f"{i}. **{title}**\n"
+                
+                news_response += "\n*Stay informed with the latest developments in the crypto space.*"
+                return news_response
+            else:
+                return "📰 **Crypto News**\n\nNews data is currently unavailable. The crypto market continues to evolve rapidly with new developments in DeFi, NFTs, and blockchain technology."
+        
+        # Trading-related queries
+        elif any(keyword in query_lower for keyword in ['trade', 'buy', 'sell', 'swap', 'exchange']):
+            return """🔄 **Trading Assistance**
+
+I can help you with trading decisions! Here's what I can analyze:
+
+• **Market Conditions**: Current price trends and volatility
+• **Portfolio Optimization**: Rebalancing suggestions
+• **Risk Assessment**: Position sizing and risk management
+• **Entry/Exit Points**: Technical analysis insights
+
+💡 **Pro Tip**: Always consider your risk tolerance and never invest more than you can afford to lose.
+
+Would you like me to analyze any specific trading pair or strategy?"""
+        
+        # General crypto queries
+        else:
+            return f"""🤖 **Kairos AI Assistant**
+
+I'm here to help with all your crypto needs! I can assist with:
+
+📈 **Market Analysis**: Real-time prices and trends
+💼 **Portfolio Review**: Holdings analysis and optimization  
+📰 **News Updates**: Latest crypto developments
+🔄 **Trading Insights**: Strategy suggestions and risk management
+📚 **Education**: Explaining crypto concepts and technologies
+
+💡 **Try asking me:**
+• "What's the current Bitcoin price?"
+• "Analyze my portfolio"
+• "Show me the latest crypto news"
+• "Should I buy Ethereum now?"
+
+*How can I help you today?*"""
+
+    def get_intelligent_analysis(self, portfolio_json: dict, market_prices_json: dict, news_json: dict, strategy_performance_json: list) -> dict:
+        """
+        🧠 AUTONOMOUS MODE: Core decision engine for autonomous trading
+        Analyzes all data and returns structured trading decisions
+        """
+        total_value = portfolio_json.get('total_value', 0)
+        balances = portfolio_json.get('balances', [])
+        
+        if total_value == 0 or not balances:
+            print(f"{Fore.YELLOW}⚠️ Portfolio is empty or has zero value. Returning HODL decision.{Fore.RESET}")
             return {
                 "should_trade": False,
                 "confidence_score": 0.0,
-                "strategy_chosen": {"name": "system_error", "type": "fallback"},
-                "reasoning": [f"System error during analysis: {str(e)}", "Defaulting to HODL for safety"],
-                "trade_params": None,
-                "risk_assessment": {"level": "high", "mitigation": "System error - no trade executed"}
+                "strategy_chosen": {"name": "hodl_empty_portfolio", "type": "hodl"},
+                "trade_params": {
+                    "trade_type": "swap", 
+                    "from_token": "USDC", 
+                    "to_token": "ETH", 
+                    "amount": 0.0, 
+                    "chain": "ethereum"
+                },
+                "reasoning": [
+                    "Portfolio is empty or has no available balance for trading.",
+                    "HODL strategy selected until funds become available.",
+                    "Waiting for market opportunity to enter positions."
+                ]
+            }
+        
+        available_tokens = list(token_addresses.keys())
+        allowed_strategy_types = ['momentum', 'arbitrage', 'dca', 'swing', 'scalping', 'hodl', 'custom']
+        allowed_trade_types = ['buy', 'sell', 'swap']
+
+        # Enhanced decision prompt with better chain handling
+        master_prompt = f"""
+        You are Kairos AI, an expert quantitative cryptocurrency trading analyst with years of experience. Your decisions directly impact real trading outcomes, so precision is critical.
+
+        **REAL-TIME DATA ANALYSIS REQUIRED:**
+
+        **1. Current Portfolio State:**
+        ```json
+        {json.dumps(portfolio_json, indent=2)}
+        ```
+
+        **2. Live Market Prices:**
+        ```json
+        {json.dumps(market_prices_json, indent=2)}
+        ```
+
+        **3. Latest Market News & Sentiment:**
+        ```json
+        {json.dumps(news_json, indent=2)}
+        ```
+
+        **4. Historical Strategy Performance (Your Memory):**
+        ```json
+        {json.dumps(strategy_performance_json, indent=2)}
+        ```
+
+        **🎯 TRADING DECISION FRAMEWORK:**
+
+        **CRITICAL CONSTRAINTS (MUST FOLLOW):**
+        1. **Available Tokens**: {available_tokens}
+        2. **Strategy Types**: {allowed_strategy_types}
+        3. **Trade Types**: {allowed_trade_types}
+        4. **Chain Mapping**: 
+           - Ethereum tokens: ETH, WETH, USDC, WBTC, UNI, LINK, AAVE, DAI, USDT
+           - Polygon tokens: MATIC, USDC (Polygon)
+           - Base tokens: USDbC
+           - Solana tokens: SOL
+
+        **MULTI-CHAIN PORTFOLIO RULES:**
+        - Each token exists on a specific blockchain
+        - Trades can only occur within the same chain ecosystem
+        - You MUST specify the correct `chain` for the `from_token`
+        - Check portfolio balances per chain before trading
+
+        **DECISION LOGIC:**
+        1. **Risk Assessment**: Never trade more than 25% of any token balance
+        2. **Chain Validation**: Ensure from_token and to_token are on compatible chains
+        3. **Balance Verification**: Confirm sufficient balance exists on specified chain
+        4. **Market Timing**: Use news sentiment and price trends for timing
+        5. **Strategy Selection**: Prioritize high-performing strategies from memory
+
+        **REQUIRED JSON OUTPUT:**
+        {{
+          "should_trade": boolean,
+          "confidence_score": float (0.0-1.0),
+          "strategy_chosen": {{
+            "name": "descriptive_strategy_name",
+            "type": "one_of_{allowed_strategy_types}"
+          }},
+          "trade_params": {{
+            "trade_type": "one_of_{allowed_trade_types}",
+            "from_token": "token_from_portfolio",
+            "to_token": "target_token",
+            "amount": float_amount,
+            "chain": "blockchain_network"
+          }},
+          "reasoning": [
+            "Step 1: Market analysis based on current data",
+            "Step 2: Portfolio assessment and risk evaluation", 
+            "Step 3: Chain and balance verification",
+            "Step 4: Strategy selection rationale",
+            "Step 5: Final trade decision explanation"
+          ]
+        }}
+
+        **Special Cases:**
+        - If portfolio value is 0: Return should_trade=false with HODL strategy
+        - If insufficient balance: Return should_trade=false with explanation
+        - If market conditions are unfavorable: Consider HODL with reasoning
+
+        Analyze all data comprehensively and make your best trading decision.
+        """
+
+        try:
+            print(f"{Fore.MAGENTA}🧠 Kairos AI: Analyzing comprehensive market data...{Fore.RESET}")
+            response = self.model.generate_content(master_prompt)
+            decision = json.loads(response.text)
+            
+            # Validate and enhance the decision
+            decision = self._validate_trading_decision(decision, portfolio_json)
+            
+            strategy_name = decision.get('strategy_chosen', {}).get('name', 'Unknown')
+            confidence = decision.get('confidence_score', 0) * 100
+            should_trade = decision.get('should_trade', False)
+
+            print(f"{Fore.GREEN}✅ Kairos AI Decision: {strategy_name} (Confidence: {confidence:.1f}%){Fore.RESET}")
+            print(f"{Fore.CYAN}🤔 Should Trade: {should_trade}{Fore.RESET}")
+            
+            if should_trade:
+                trade_params = decision.get('trade_params', {})
+                print(f"{Fore.YELLOW}💱 Trade: {trade_params.get('amount', 0)} {trade_params.get('from_token', 'N/A')} → {trade_params.get('to_token', 'N/A')} on {trade_params.get('chain', 'N/A')}{Fore.RESET}")
+            
+            return decision
+
+        except Exception as e:
+            print(f"{Fore.RED}❌ Kairos AI Analysis Error: {e}{Fore.RESET}")
+            if 'response' in locals():
+                print(f"Raw response: {getattr(response, 'text', 'No response text')}")
+            
+            return {
+                "should_trade": False,
+                "confidence_score": 0.0,
+                "strategy_chosen": {"name": "system_error_recovery", "type": "hodl"},
+                "trade_params": {
+                    "trade_type": "swap",
+                    "from_token": "USDC", 
+                    "to_token": "ETH", 
+                    "amount": 0.0, 
+                    "chain": "ethereum"
+                },
+                "reasoning": [
+                    f"System error occurred during analysis: {str(e)}",
+                    "Defaulting to HODL strategy for safety",
+                    "Will retry analysis in next cycle"
+                ]
             }
 
+    def _validate_trading_decision(self, decision: dict, portfolio_data: dict) -> dict:
+        """Validate and fix trading decisions from AI"""
+        try:
+            # Ensure all required fields exist
+            if not decision.get('trade_params'):
+                decision['trade_params'] = {
+                    "trade_type": "swap",
+                    "from_token": "USDC",
+                    "to_token": "ETH", 
+                    "amount": 0.0,
+                    "chain": "ethereum"
+                }
+            
+            trade_params = decision['trade_params']
+            
+            # Validate chain assignment
+            chain_mapping = {
+                'ETH': 'ethereum', 'WETH': 'ethereum', 'USDC': 'ethereum', 
+                'WBTC': 'ethereum', 'UNI': 'ethereum', 'LINK': 'ethereum',
+                'AAVE': 'ethereum', 'DAI': 'ethereum', 'USDT': 'ethereum',
+                'MATIC': 'polygon', 'SOL': 'solana', 'USDbC': 'base'
+            }
+            
+            from_token = trade_params.get('from_token', 'USDC')
+            if from_token in chain_mapping:
+                trade_params['chain'] = chain_mapping[from_token]
+            
+            # Validate token availability in portfolio
+            portfolio_balances = portfolio_data.get('balances', [])
+            available_tokens = [b.get('symbol') for b in portfolio_balances if b.get('amount', 0) > 0]
+            
+            if from_token not in available_tokens and decision.get('should_trade', False):
+                print(f"{Fore.YELLOW}⚠️ Token {from_token} not available in portfolio, switching to HODL{Fore.RESET}")
+                decision['should_trade'] = False
+                decision['strategy_chosen'] = {"name": "insufficient_balance_hodl", "type": "hodl"}
+                decision['reasoning'].append(f"Token {from_token} not available in portfolio")
+            
+            # Ensure confidence score is within bounds
+            confidence = decision.get('confidence_score', 0.5)
+            decision['confidence_score'] = max(0.0, min(1.0, float(confidence)))
+            
+            return decision
+            
+        except Exception as e:
+            print(f"{Fore.RED}❌ Decision validation error: {e}{Fore.RESET}")
+            return decision
 
-# Keep the old class name for compatibility
+    def get_market_analysis(self, symbol: str) -> str:
+        """Get detailed market analysis for a specific cryptocurrency"""
+        try:
+            # Get current price data
+            price_data = self._get_live_price_data(symbol)
+            
+            analysis_prompt = f"""
+            Provide a comprehensive market analysis for {symbol} based on current data:
+            
+            Price Data: {json.dumps(price_data, indent=2)}
+            
+            Include:
+            1. Current price and recent performance
+            2. Technical analysis insights
+            3. Market sentiment
+            4. Key support and resistance levels
+            5. Short-term outlook (1-7 days)
+            6. Risk factors to consider
+            
+            Format the response in a clear, professional manner with specific insights.
+            """
+            
+            response = self.assistant_model.generate_content(analysis_prompt)
+            return response.text
+            
+        except Exception as e:
+            return f"Unable to generate market analysis for {symbol}: {str(e)}"
+
+    def _get_live_price_data(self, symbol: str) -> dict:
+        """Get live price data for a cryptocurrency"""
+        try:
+            # Map common symbols to CoinGecko IDs
+            coingecko_ids = {
+                'BTC': 'bitcoin', 'ETH': 'ethereum', 'USDC': 'usd-coin',
+                'WETH': 'weth', 'WBTC': 'wrapped-bitcoin', 'UNI': 'uniswap',
+                'LINK': 'chainlink', 'AAVE': 'aave', 'MATIC': 'matic-network',
+                'SOL': 'solana', 'DAI': 'dai', 'USDT': 'tether'
+            }
+            
+            coin_id = coingecko_ids.get(symbol.upper(), symbol.lower())
+            
+            # Get basic price data
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true"
+            response = requests.get(url, timeout=5)
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": "Failed to fetch price data"}
+                
+        except Exception as e:
+            return {"error": str(e)}
+
+# Keep backward compatibility
 GeminiTradingAgent = PowerfulGeminiTradingAgent
-
-def main():
-    """Main function with enhanced startup"""
-    try:
-        print(f"{Fore.CYAN}🚀 Initializing Gemini AI Trading Agent...{Style.RESET_ALL}")
-        agent = PowerfulGeminiTradingAgent()
-        agent.run()
-    except KeyboardInterrupt:
-        print(f"\n{Fore.CYAN}👋 Startup interrupted. Goodbye!{Style.RESET_ALL}")
-    except Exception as e:
-        print(f"{Fore.RED}❌ Startup Error: {str(e)}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}💡 Please check your .env file and API keys:{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}   - GEMINI_API_KEY{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}   - RECALL_API_KEY{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}   - COINPANIC_API_KEY{Style.RESET_ALL}")
-
-if __name__ == "__main__":
-    main()
