@@ -69,7 +69,7 @@ const Testimonials = () => (
         <div className="z-10 absolute left-0 inset-y-0 w-[15%] bg-gradient-to-r from-background to-transparent pointer-events-none" />
         <div className="z-10 absolute right-0 inset-y-0 w-[15%] bg-gradient-to-l from-background to-transparent pointer-events-none" />
         
-        <Marquee pauseOnHover className="[--duration:40s]" repeat={2}>
+        <Marquee pauseOnHover className="[--duration:40s]" repeat={2} >
           {testimonials.map((testimonial) => (
             <TestimonialCard key={testimonial.id} testimonial={testimonial} />
           ))}
@@ -79,7 +79,7 @@ const Testimonials = () => (
           {testimonials.map((testimonial) => (
             <TestimonialCard key={`reverse-${testimonial.id}`} testimonial={testimonial} />
           ))}
-        </Marquee>
+        </Marquee >
       </div>
     </div>
   </div>
