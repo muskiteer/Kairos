@@ -22,7 +22,7 @@ load_dotenv(os.path.join(backend_dir, '.env'))
 PORT = int(os.environ.get("PORT", 8000))
 
 FRONTEND_URLS = [
-    "https://kairos-frontend.onrender.com",  # Replace with your actual frontend URL
+    "https://kairos-u0lz.onrender.com",  # Replace with your actual frontend URL
     "http://localhost:3000",  # For local development
     "http://localhost:3001"
 ]
