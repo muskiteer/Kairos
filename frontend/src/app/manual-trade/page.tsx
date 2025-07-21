@@ -22,6 +22,21 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { 
   ArrowRightLeft, 
   Wallet, 
@@ -31,29 +46,47 @@ import {
   CheckCircle,
   Loader2,
   RefreshCw,
-  BarChart3
+  BarChart3,
+  LineChart,
+  CandlestickChart,
+  TrendingDown,
+  Activity
 } from "lucide-react"
 
-// Supported tokens based on execute.py
+// Supported tokens based on portfolio API
 const SUPPORTED_TOKENS = {
   "USDC": { name: "USD Coin", symbol: "USDC", decimals: 6 },
+  "USDbC": { name: "USD Base Coin", symbol: "USDbC", decimals: 6 },
   "WETH": { name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
   "WBTC": { name: "Wrapped Bitcoin", symbol: "WBTC", decimals: 8 },
   "DAI": { name: "Dai Stablecoin", symbol: "DAI", decimals: 18 },
   "USDT": { name: "Tether USD", symbol: "USDT", decimals: 6 },
   "UNI": { name: "Uniswap", symbol: "UNI", decimals: 18 },
   "LINK": { name: "Chainlink", symbol: "LINK", decimals: 18 },
-  "ETH": { name: "Ethereum", symbol: "ETH", decimals: 18 }
+  "ETH": { name: "Ethereum", symbol: "ETH", decimals: 18 },
+  "AAVE": { name: "Aave", symbol: "AAVE", decimals: 18 },
+  "MATIC": { name: "Polygon", symbol: "MATIC", decimals: 18 },
+  "SOL": { name: "Solana", symbol: "SOL", decimals: 9 },
+  "PEPE": { name: "Pepe", symbol: "PEPE", decimals: 18 },
+  "SHIB": { name: "Shiba Inu", symbol: "SHIB", decimals: 18 }
 }
 
 interface TokenBalance {
-  amount: number
   token: string
+  balance: number
+  price: number
+  usd_value: number
+  chain?: string
+  tokenAddress?: string
 }
 
-interface TokenPrice {
-  price: number
-  symbol: string
+interface PortfolioData {
+  balances: TokenBalance[]
+  total_value: number
+  real_total_value: number
+  user_id: string
+  timestamp: string
+  agent_id?: string
 }
 
 interface TradeResult {
@@ -64,30 +97,54 @@ interface TradeResult {
   gasUsed?: number
 }
 
+interface ChartOption {
+  id: string
+  name: string
+  symbol: string
+  icon: React.ReactNode
+}
+
 export default function ManualTradePage() {
   const [fromToken, setFromToken] = useState<string>("")
   const [toToken, setToToken] = useState<string>("")
   const [amount, setAmount] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
-  const [balances, setBalances] = useState<Record<string, number>>({})
+  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null)
   const [prices, setPrices] = useState<Record<string, number>>({})
   const [tradeResult, setTradeResult] = useState<TradeResult | null>(null)
-  const [loadingBalances, setLoadingBalances] = useState(false)
+  const [loadingPortfolio, setLoadingPortfolio] = useState(false)
   const [loadingPrices, setLoadingPrices] = useState(false)
-  const [selectedPair, setSelectedPair] = useState<string>("WETH")
+  const [selectedChart, setSelectedChart] = useState<string>("WETH")
+  const [chartDialogOpen, setChartDialogOpen] = useState(false)
 
-  // Fetch token balances
-  const fetchBalance = async (token: string) => {
+  // Chart options for the modal
+  const chartOptions: ChartOption[] = [
+    { id: "WETH", name: "Ethereum", symbol: "WETH/USD", icon: <TrendingUp className="h-4 w-4" /> },
+    { id: "WBTC", name: "Bitcoin", symbol: "WBTC/USD", icon: <BarChart3 className="h-4 w-4" /> },
+    { id: "UNI", name: "Uniswap", symbol: "UNI/USD", icon: <LineChart className="h-4 w-4" /> },
+    { id: "LINK", name: "Chainlink", symbol: "LINK/USD", icon: <Activity className="h-4 w-4" /> },
+    { id: "AAVE", name: "Aave", symbol: "AAVE/USD", icon: <CandlestickChart className="h-4 w-4" /> },
+    { id: "MATIC", name: "Polygon", symbol: "MATIC/USD", icon: <TrendingDown className="h-4 w-4" /> },
+    { id: "SOL", name: "Solana", symbol: "SOL/USD", icon: <TrendingUp className="h-4 w-4" /> },
+    { id: "PEPE", name: "Pepe", symbol: "PEPE/USD", icon: <BarChart3 className="h-4 w-4" /> }
+  ]
+
+  // Fetch portfolio data from API
+  const fetchPortfolio = async () => {
+    setLoadingPortfolio(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/balance/${token}`)
+      const response = await fetch('http://localhost:8000/api/portfolio')
       if (response.ok) {
         const data = await response.json()
-        return data.amount || 0
+        setPortfolioData(data)
+      } else {
+        console.error('Failed to fetch portfolio')
       }
     } catch (error) {
-      console.error(`Failed to fetch ${token} balance:`, error)
+      console.error('Error fetching portfolio:', error)
+    } finally {
+      setLoadingPortfolio(false)
     }
-    return 0
   }
 
   // Fetch token price
@@ -104,19 +161,6 @@ export default function ManualTradePage() {
     return 0
   }
 
-  // Load all balances
-  const loadBalances = async () => {
-    setLoadingBalances(true)
-    const newBalances: Record<string, number> = {}
-    
-    for (const token of Object.keys(SUPPORTED_TOKENS)) {
-      newBalances[token] = await fetchBalance(token)
-    }
-    
-    setBalances(newBalances)
-    setLoadingBalances(false)
-  }
-
   // Load all prices
   const loadPrices = async () => {
     setLoadingPrices(true)
@@ -128,6 +172,20 @@ export default function ManualTradePage() {
     
     setPrices(newPrices)
     setLoadingPrices(false)
+  }
+
+  // Get balance for a specific token
+  const getTokenBalance = (token: string): number => {
+    if (!portfolioData) return 0
+    const balance = portfolioData.balances.find(b => b.token === token)
+    return balance ? balance.balance : 0
+  }
+
+  // Get token price
+  const getTokenPrice = (token: string): number => {
+    if (!portfolioData) return prices[token] || 0
+    const balance = portfolioData.balances.find(b => b.token === token)
+    return balance ? balance.price : (prices[token] || 0)
   }
 
   // Execute trade
@@ -149,10 +207,11 @@ export default function ManualTradePage() {
       return
     }
 
-    if (balances[fromToken] < amountNum) {
+    const currentBalance = getTokenBalance(fromToken)
+    if (currentBalance < amountNum) {
       setTradeResult({
         success: false,
-        message: `Insufficient balance. Available: ${balances[fromToken]} ${fromToken}`
+        message: `Insufficient balance. Available: ${currentBalance} ${fromToken}`
       })
       return
     }
@@ -184,8 +243,8 @@ export default function ManualTradePage() {
           gasUsed: data.gasUsed
         })
         
-        // Refresh balances after successful trade
-        await loadBalances()
+        // Refresh portfolio after successful trade
+        await fetchPortfolio()
       } else {
         const errorData = await response.json()
         setTradeResult({
@@ -209,17 +268,26 @@ export default function ManualTradePage() {
     const amountNum = parseFloat(amount)
     if (isNaN(amountNum)) return 0
     
-    const fromPrice = prices[fromToken] || 0
-    const toPrice = prices[toToken] || 0
+    const fromPrice = getTokenPrice(fromToken)
+    const toPrice = getTokenPrice(toToken)
     
     if (fromPrice === 0 || toPrice === 0) return 0
     
     return (amountNum * fromPrice) / toPrice
   }
 
+  // Get tokens available for trading (with non-zero balances)
+  const getAvailableTokens = () => {
+    if (!portfolioData) return Object.keys(SUPPORTED_TOKENS)
+    return portfolioData.balances
+      .filter(b => b.balance > 0)
+      .map(b => b.token)
+      .filter(token => token in SUPPORTED_TOKENS)
+  }
+
   // Load initial data
   useEffect(() => {
-    loadBalances()
+    fetchPortfolio()
     loadPrices()
   }, [])
 
@@ -260,12 +328,10 @@ export default function ManualTradePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    ${Object.entries(balances).reduce((total, [token, balance]) => {
-                      return total + (balance * (prices[token] || 0))
-                    }, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    ${portfolioData?.total_value?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '0.00'}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Total holdings
+                    Real: ${portfolioData?.real_total_value?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '0.00'}
                   </p>
                 </CardContent>
               </Card>
@@ -277,7 +343,7 @@ export default function ManualTradePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {Object.values(balances).filter(balance => balance > 0).length}
+                    {portfolioData?.balances?.filter(b => b.balance > 0).length || 0}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Non-zero balances
@@ -314,25 +380,29 @@ export default function ManualTradePage() {
                 <div className="space-y-2">
                   <Label>From Token</Label>
                   <div className="flex gap-2">
-                    <select
-                      value={fromToken}
-                      onChange={(e) => setFromToken(e.target.value)}
-                      className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    >
-                      <option value="">Select token to sell</option>
-                      {Object.entries(SUPPORTED_TOKENS).map(([symbol, token]) => (
-                        <option key={symbol} value={symbol}>
-                          {symbol} - {token.name} ({balances[symbol]?.toFixed(6) || '0.000000'})
-                        </option>
-                      ))}
-                    </select>
+                    <Select value={fromToken} onValueChange={setFromToken}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select token to sell" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getAvailableTokens().map((symbol) => {
+                          const token = SUPPORTED_TOKENS[symbol as keyof typeof SUPPORTED_TOKENS]
+                          const balance = getTokenBalance(symbol)
+                          return (
+                            <SelectItem key={symbol} value={symbol}>
+                              {symbol} - {token?.name} ({balance.toFixed(6)})
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={loadBalances}
-                      disabled={loadingBalances}
+                      onClick={fetchPortfolio}
+                      disabled={loadingPortfolio}
                     >
-                      {loadingBalances ? (
+                      {loadingPortfolio ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <RefreshCw className="h-4 w-4" />
@@ -341,10 +411,10 @@ export default function ManualTradePage() {
                   </div>
                   {fromToken && (
                     <p className="text-sm text-muted-foreground">
-                      Available: {balances[fromToken]?.toFixed(6) || '0.000000'} {fromToken}
-                      {prices[fromToken] && (
+                      Available: {getTokenBalance(fromToken).toFixed(6)} {fromToken}
+                      {getTokenPrice(fromToken) > 0 && (
                         <span className="ml-2">
-                          (${prices[fromToken].toFixed(4)})
+                          (${getTokenPrice(fromToken).toFixed(4)})
                         </span>
                       )}
                     </p>
@@ -366,7 +436,7 @@ export default function ManualTradePage() {
                     {fromToken && (
                       <Button
                         variant="outline"
-                        onClick={() => setAmount(balances[fromToken]?.toString() || "0")}
+                        onClick={() => setAmount(getTokenBalance(fromToken).toString())}
                       >
                         Max
                       </Button>
@@ -377,20 +447,20 @@ export default function ManualTradePage() {
                 {/* To Token */}
                 <div className="space-y-2">
                   <Label>To Token</Label>
-                  <select
-                    value={toToken}
-                    onChange={(e) => setToToken(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                  >
-                    <option value="">Select token to buy</option>
-                    {Object.entries(SUPPORTED_TOKENS)
-                      .filter(([symbol]) => symbol !== fromToken)
-                      .map(([symbol, token]) => (
-                      <option key={symbol} value={symbol}>
-                        {symbol} - {token.name} (${prices[symbol]?.toFixed(4) || '0.0000'})
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={toToken} onValueChange={setToToken}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select token to buy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(SUPPORTED_TOKENS)
+                        .filter(([symbol]) => symbol !== fromToken)
+                        .map(([symbol, token]) => (
+                        <SelectItem key={symbol} value={symbol}>
+                          {symbol} - {token.name} (${getTokenPrice(symbol).toFixed(4)})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Estimated Output */}
@@ -477,26 +547,44 @@ export default function ManualTradePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {Object.entries(SUPPORTED_TOKENS).map(([symbol, token]) => {
-                    const balance = balances[symbol] || 0
-                    const price = prices[symbol] || 0
-                    const value = balance * price
+                  {portfolioData?.balances?.map((balanceItem) => {
+                    const token = SUPPORTED_TOKENS[balanceItem.token as keyof typeof SUPPORTED_TOKENS]
                     
                     return (
-                      <div key={symbol} className="flex items-center justify-between p-2 rounded-lg border">
+                      <div key={balanceItem.token} className="flex items-center justify-between p-2 rounded-lg border">
                         <div>
-                          <p className="font-medium">{symbol}</p>
-                          <p className="text-sm text-muted-foreground">{token.name}</p>
+                          <p className="font-medium">{balanceItem.token}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {token?.name || balanceItem.token} • {balanceItem.chain}
+                          </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium">{balance.toFixed(6)}</p>
+                          <p className="font-medium">{balanceItem.balance.toFixed(6)}</p>
                           <p className="text-sm text-muted-foreground">
-                            ${value.toFixed(2)} ({price > 0 ? `$${price.toFixed(4)}` : 'N/A'})
+                            ${balanceItem.usd_value.toFixed(2)} (${balanceItem.price.toFixed(4)})
                           </p>
                         </div>
                       </div>
                     )
                   })}
+                  
+                  {/* Show supported tokens with zero balance */}
+                  {Object.entries(SUPPORTED_TOKENS)
+                    .filter(([symbol]) => !portfolioData?.balances?.some(b => b.token === symbol))
+                    .map(([symbol, token]) => (
+                      <div key={symbol} className="flex items-center justify-between p-2 rounded-lg border opacity-50">
+                        <div>
+                          <p className="font-medium">{symbol}</p>
+                          <p className="text-sm text-muted-foreground">{token.name}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">0.000000</p>
+                          <p className="text-sm text-muted-foreground">
+                            $0.00 (${getTokenPrice(symbol).toFixed(4)})
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                 </div>
               </CardContent>
             </Card>
@@ -509,24 +597,49 @@ export default function ManualTradePage() {
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
                   TradingView Chart
+                  <Dialog open={chartDialogOpen} onOpenChange={setChartDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="ml-auto">
+                        Select Chart
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Select Trading Chart</DialogTitle>
+                        <DialogDescription>
+                          Choose a cryptocurrency pair to display on the chart
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid grid-cols-2 gap-3">
+                        {chartOptions.map((option) => (
+                          <Button
+                            key={option.id}
+                            variant={selectedChart === option.id ? "default" : "outline"}
+                            className="h-auto p-3 flex flex-col items-center gap-2"
+                            onClick={() => {
+                              setSelectedChart(option.id)
+                              setChartDialogOpen(false)
+                            }}
+                          >
+                            {option.icon}
+                            <div className="text-center">
+                              <div className="font-medium">{option.name}</div>
+                              <div className="text-xs text-muted-foreground">{option.symbol}</div>
+                            </div>
+                          </Button>
+                        ))}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </CardTitle>
-                <div className="grid grid-cols-4 gap-2 w-full">
-                  {["WETH", "WBTC", "UNI", "LINK"].map((pair) => (
-                    <Button
-                      key={pair}
-                      variant={selectedPair === pair ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSelectedPair(pair)}
-                    >
-                      {pair}/USD
-                    </Button>
-                  ))}
+                <div className="text-sm text-muted-foreground">
+                  Currently showing: <span className="font-medium">{selectedChart}/USD</span>
                 </div>
               </CardHeader>
               <CardContent className="flex-1 p-0">
                 <div className="h-full min-h-[600px] w-full">
                   <iframe
-                    src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${selectedPair}USD&interval=15&hidesidetoolbar=1&hidetoptoolbar=1&symboledit=1&saveimage=1&toolbarbg=F1F3F6&studies=[]&hideideas=1&theme=light&style=1&timezone=Etc%2FUTC&studies_overrides={}&overrides={}&enabled_features=[]&disabled_features=[]&locale=en&utm_source=localhost&utm_medium=widget&utm_campaign=chart&utm_term=${selectedPair}USD`}
+                    src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${selectedChart}USD&interval=15&hidesidetoolbar=1&hidetoptoolbar=1&symboledit=1&saveimage=1&toolbarbg=F1F3F6&studies=[]&hideideas=1&theme=light&style=1&timezone=Etc%2FUTC&studies_overrides={}&overrides={}&enabled_features=[]&disabled_features=[]&locale=en&utm_source=localhost&utm_medium=widget&utm_campaign=chart&utm_term=${selectedChart}USD`}
                     width="100%"
                     height="100%"
                     frameBorder="0"

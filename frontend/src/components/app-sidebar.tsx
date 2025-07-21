@@ -45,14 +45,9 @@ const data = {
       icon: PieChart, // Added graph icon here
     },
     {
-      title: "AI Agent",
-      url: "/ai-agent",
+      title: "Kairos AI",
+      url: "/kairos-ai",
       icon: Bot,
-    },
-    {
-      title: "Autonomous Agent",
-      url: "/autonomous-agent",
-      icon: Settings2,
     },
     {
       title: "Vincent Police",
@@ -102,16 +97,10 @@ export function AppSidebar({
         isActive: activePage === "manual-trade",
       },
       {
-        title: "AI Agent",
-        url: "/ai-agent",
+        title: "Kairos AI",
+        url: "/kairos-ai",
         icon: Bot,
-        isActive: activePage === "ai-agent",
-      },
-      {
-        title: "Autonomous Agent",
-        url: "/autonomous-agent",
-        icon: Settings2,
-        isActive: activePage === "autonomous-agent",
+        isActive: activePage === "kairos-ai",
       },
       {
         title: "Vincent Police",
