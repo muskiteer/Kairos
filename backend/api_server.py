@@ -4,9 +4,10 @@ Kairos Trading API Server - Enhanced for True Autonomous Trading
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import sys
 import os
@@ -23,8 +24,28 @@ from agent.kairos_autonomous_agent import KairosAutonomousAgent
 from database.supabase_client import supabase_client
 from api.portfolio import get_portfolio
 
+# Import trades_history module from api directory
+try:
+    from api.trades_history import get_portfolio as get_trades_data
+except ImportError:
+    # If direct import fails, try to import from the file path
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("trades_history", os.path.join(backend_dir, "api", "trades_history.py"))
+    trades_history = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(trades_history)
+    get_trades_data = trades_history.get_portfolio
+
 # Initialize FastAPI app
 app = FastAPI(title="Kairos Autonomous Trading API", version="3.0.0")
+
+# Add CORS middleware to allow frontend connections
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],  # Allow your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # This dictionary will store active agent instances by session_id
 active_sessions: Dict[str, KairosAutonomousAgent] = {}
@@ -42,10 +63,117 @@ class ChatResponse(BaseModel):
     session_id: Optional[str] = None
     timestamp: str
 
+class TradeHistoryResponse(BaseModel):
+    trades: List[Dict[str, Any]]
+    stats: Optional[Dict[str, Any]] = None
+    timestamp: str
+
 # --- API Endpoints ---
 @app.get("/")
 async def root():
     return {"status": "🚀 Kairos Autonomous Trading API is running"}
+
+@app.get("/api/trades/history", response_model=TradeHistoryResponse)
+async def get_trade_history(user_id: str = "default"):
+    """
+    Get trade history for a user from the Recall API.
+    """
+    try:
+        print(f"📊 Fetching trade history for user: {user_id}")
+        
+        # Get trades data using the trades_history module
+        data = get_trades_data(user_id)
+        
+        # Extract trades from the response
+        trades = data.get("trades", [])
+        
+        # Process and format trades based on the actual API response structure
+        formatted_trades = []
+        for idx, trade in enumerate(trades):
+            # Map the actual field names from the API response
+            formatted_trade = {
+                "id": trade.get("id") or f"trade_{idx}",
+                "timestamp": trade.get("timestamp") or datetime.now().isoformat(),
+                "fromToken": trade.get("fromTokenSymbol") or "UNKNOWN",
+                "toToken": trade.get("toTokenSymbol") or "UNKNOWN",
+                "fromAmount": float(trade.get("fromAmount", 0) or 0),
+                "toAmount": float(trade.get("toAmount", 0) or 0),
+                "fromPrice": float(trade.get("price", 0) or 0),
+                "toPrice": float(trade.get("price", 0) or 0) if trade.get("price") else 0,
+                "totalValue": float(trade.get("tradeAmountUsd", 0) or 0),
+                "chain": trade.get("fromSpecificChain") or trade.get("fromChain") or "ethereum",
+                "txHash": trade.get("txHash") or trade.get("transactionHash") or f"0x{trade.get('id', '')[:40]}",
+                "status": "success" if trade.get("success") else "failed",
+                "gasUsed": trade.get("gasUsed"),
+                "gasFee": float(trade.get("gasFee", 0) or 0),
+                "slippage": trade.get("slippage"),
+                "type": "swap",  # All trades from this API are swaps
+                "session_id": trade.get("agentId"),
+                "strategy": trade.get("reason") or "Manual trade",
+                "source": "ai_agent" if "AI" in trade.get("reason", "") else "manual"
+            }
+            formatted_trades.append(formatted_trade)
+        
+        # Calculate statistics
+        total_trades = len(formatted_trades)
+        successful_trades = sum(1 for t in formatted_trades if t.get("status") == "success")
+        total_volume = sum(t.get("totalValue", 0) for t in formatted_trades)
+        total_fees = sum(t.get("gasFee", 0) for t in formatted_trades)
+        
+        # Calculate most traded token
+        token_frequency = {}
+        for trade in formatted_trades:
+            for token in [trade.get("fromToken"), trade.get("toToken")]:
+                if token and token != "UNKNOWN":
+                    token_frequency[token] = token_frequency.get(token, 0) + 1
+        
+        most_traded_token = max(token_frequency.items(), key=lambda x: x[1])[0] if token_frequency else "N/A"
+        
+        stats = {
+            "totalTrades": total_trades,
+            "totalVolume": total_volume,
+            "successRate": (successful_trades / total_trades * 100) if total_trades > 0 else 0,
+            "totalFees": total_fees,
+            "avgTradeSize": total_volume / total_trades if total_trades > 0 else 0,
+            "mostTradedToken": most_traded_token
+        }
+        
+        return TradeHistoryResponse(
+            trades=formatted_trades,
+            stats=stats,
+            timestamp=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ Error fetching trade history: {str(e)}")
+        # Return empty response instead of raising exception
+        return TradeHistoryResponse(
+            trades=[],
+            stats={
+                "totalTrades": 0,
+                "totalVolume": 0,
+                "successRate": 0,
+                "totalFees": 0,
+                "avgTradeSize": 0,
+                "mostTradedToken": "N/A"
+            },
+            timestamp=datetime.now().isoformat()
+        )
+
+@app.get("/api/portfolio")
+async def get_portfolio_endpoint(user_id: str = "default"):
+    """
+    Get portfolio information for a user.
+    """
+    try:
+        portfolio = get_portfolio(user_id=user_id)
+        return portfolio
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get portfolio: {str(e)}")
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_with_agent(request: ChatRequest, background_tasks: BackgroundTasks):

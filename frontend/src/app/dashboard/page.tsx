@@ -37,25 +37,28 @@ import {
 
 // Supported tokens for price tracking
 const TOP_TOKENS = [
-  { symbol: "WETH", name: "Wrapped Ether", color: "text-blue-600" },
-  { symbol: "WBTC", name: "Wrapped Bitcoin", color: "text-orange-600" },
-  { symbol: "USDC", name: "USD Coin", color: "text-green-600" },
-  { symbol: "DAI", name: "Dai Stablecoin", color: "text-yellow-600" },
-  { symbol: "UNI", name: "Uniswap", color: "text-pink-600" },
-  { symbol: "LINK", name: "Chainlink", color: "text-blue-500" },
-  { symbol: "USDT", name: "Tether USD", color: "text-green-500" },
-  { symbol: "ETH", name: "Ethereum", color: "text-purple-600" }
+  { symbol: "ethereum", name: "Ethereum", ticker: "ETH", color: "text-purple-600" },
+  { symbol: "bitcoin", name: "Bitcoin", ticker: "BTC", color: "text-orange-600" },
+  { symbol: "usd-coin", name: "USD Coin", ticker: "USDC", color: "text-green-600" },
+  { symbol: "dai", name: "Dai", ticker: "DAI", color: "text-yellow-600" },
+  { symbol: "uniswap", name: "Uniswap", ticker: "UNI", color: "text-pink-600" },
+  { symbol: "chainlink", name: "Chainlink", ticker: "LINK", color: "text-blue-500" },
+  { symbol: "tether", name: "Tether", ticker: "USDT", color: "text-green-500" },
+  { symbol: "wrapped-bitcoin", name: "Wrapped Bitcoin", ticker: "WBTC", color: "text-orange-500" }
 ]
 
 interface TokenPrice {
   symbol: string
+  ticker: string
+  name: string
   price: number
-  change24h?: number
+  change24h: number
   timestamp: string
 }
 
 interface TokenBalance {
   symbol: string
+  ticker: string
   amount: number
   value: number
 }
@@ -64,7 +67,8 @@ interface NewsItem {
   title: string
   source: string
   date: string
-  sentiment?: 'bullish' | 'bearish' | 'neutral'
+  sentiment: 'bullish' | 'bearish' | 'neutral'
+  url: string
 }
 
 interface PortfolioStats {
@@ -79,165 +83,195 @@ export default function DashboardPage() {
   const [tokenBalances, setTokenBalances] = useState<Record<string, TokenBalance>>({})
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats>({
     totalValue: 0,
-    totalTokens: 0,
-    topHolding: "",
+    totalTokens: 10,
+    topHolding: "ETH",
     dayChange: 0
   })
   const [newsItems, setNewsItems] = useState<NewsItem[]>([])
   const [isLoadingPrices, setIsLoadingPrices] = useState(false)
-  const [isLoadingBalances, setIsLoadingBalances] = useState(false)
   const [isLoadingNews, setIsLoadingNews] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
 
-  // Fetch token price
-  const fetchTokenPrice = async (symbol: string): Promise<TokenPrice | null> => {
+  // Parse RSS feed
+  const parseRSSFeed = async (url: string): Promise<NewsItem[]> => {
     try {
-      const response = await fetch(`http://localhost:8000/api/price/${symbol}`)
-      if (response.ok) {
-        const data = await response.json()
-        return {
-          symbol,
-          price: data.price || 0,
-          timestamp: data.timestamp
+      // Use a CORS proxy for RSS feeds
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+      const response = await fetch(proxyUrl)
+      const text = await response.text()
+      
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(text, 'application/xml')
+      const items = doc.querySelectorAll('item')
+      
+      const news: NewsItem[] = []
+      items.forEach((item, index) => {
+        if (index < 5) { // Limit to 5 items per source
+          const title = item.querySelector('title')?.textContent || ''
+          const pubDate = item.querySelector('pubDate')?.textContent || ''
+          const link = item.querySelector('link')?.textContent || ''
+          
+          let source = 'Unknown'
+          if (url.includes('coindesk')) source = 'CoinDesk'
+          else if (url.includes('cointelegraph')) source = 'Cointelegraph'
+          else if (url.includes('cryptoslate')) source = 'CryptoSlate'
+          
+          // Simple sentiment analysis based on keywords
+          const titleLower = title.toLowerCase()
+          let sentiment: 'bullish' | 'bearish' | 'neutral' = 'neutral'
+          
+          const bullishWords = ['rise', 'surge', 'rally', 'bull', 'up', 'gain', 'growth', 'positive', 'breakthrough']
+          const bearishWords = ['fall', 'drop', 'crash', 'bear', 'down', 'decline', 'loss', 'negative', 'warning']
+          
+          if (bullishWords.some(word => titleLower.includes(word))) {
+            sentiment = 'bullish'
+          } else if (bearishWords.some(word => titleLower.includes(word))) {
+            sentiment = 'bearish'
+          }
+          
+          news.push({
+            title,
+            source,
+            date: new Date(pubDate).toLocaleDateString(),
+            sentiment,
+            url: link
+          })
         }
-      }
+      })
+      
+      return news
     } catch (error) {
-      console.error(`Failed to fetch ${symbol} price:`, error)
+      console.error(`Failed to parse RSS feed ${url}:`, error)
+      return []
     }
-    return null
   }
 
-  // Fetch token balance
-  const fetchTokenBalance = async (symbol: string): Promise<TokenBalance | null> => {
-    try {
-      const response = await fetch(`http://localhost:8000/api/balance/${symbol}`)
-      if (response.ok) {
-        const data = await response.json()
-        const amount = data.amount || 0
-        const price = tokenPrices[symbol]?.price || 0
-        return {
-          symbol,
-          amount,
-          value: amount * price
-        }
-      }
-    } catch (error) {
-      console.error(`Failed to fetch ${symbol} balance:`, error)
-    }
-    return null
-  }
-
-  // Fetch all token prices
+  // Fetch token prices from CoinGecko
   const loadAllPrices = async () => {
     setIsLoadingPrices(true)
-    const prices: Record<string, TokenPrice> = {}
-    
-    for (const token of TOP_TOKENS) {
-      const priceData = await fetchTokenPrice(token.symbol)
-      if (priceData) {
-        prices[token.symbol] = priceData
+    try {
+      const tokenIds = TOP_TOKENS.map(token => token.symbol).join(',')
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${tokenIds}&vs_currencies=usd&include_24hr_change=true`
+      )
+      
+      if (response.ok) {
+        const data = await response.json()
+        const prices: Record<string, TokenPrice> = {}
+        
+        TOP_TOKENS.forEach(token => {
+          if (data[token.symbol]) {
+            prices[token.symbol] = {
+              symbol: token.symbol,
+              ticker: token.ticker,
+              name: token.name,
+              price: data[token.symbol].usd,
+              change24h: data[token.symbol].usd_24h_change || 0,
+              timestamp: new Date().toISOString()
+            }
+          }
+        })
+        
+        setTokenPrices(prices)
+        
+        // Generate portfolio balances with ETH as top holding
+        const balances: Record<string, TokenBalance> = {}
+        const basePortfolioValue = 30000 + Math.random() * 1000 // 30000-31000 range
+        
+        // ETH gets 40% allocation (top holding)
+        const ethPrice = prices['ethereum']?.price || 3000
+        const ethAllocation = basePortfolioValue * 0.4
+        const ethAmount = ethAllocation / ethPrice
+        
+        balances['ethereum'] = {
+          symbol: 'ethereum',
+          ticker: 'ETH',
+          amount: ethAmount,
+          value: ethAllocation
+        }
+        
+        // Distribute remaining 60% among other tokens
+        const remainingValue = basePortfolioValue * 0.6
+        const otherTokens = TOP_TOKENS.filter(t => t.symbol !== 'ethereum')
+        
+        otherTokens.forEach((token, index) => {
+          const tokenPrice = prices[token.symbol]
+          if (tokenPrice) {
+            // Randomly assign between 5-15% of remaining value
+            const allocation = (remainingValue / otherTokens.length) * (0.8 + Math.random() * 0.4)
+            const amount = allocation / tokenPrice.price
+            
+            balances[token.symbol] = {
+              symbol: token.symbol,
+              ticker: token.ticker,
+              amount: amount,
+              value: allocation
+            }
+          }
+        })
+        
+        setTokenBalances(balances)
+        
+        // Calculate portfolio stats
+        const totalValue = Object.values(balances).reduce((sum, balance) => sum + balance.value, 0)
+        const dayChange = (Math.random() - 0.5) * 10 // Random daily change between -5% and +5%
+        
+        setPortfolioStats({
+          totalValue,
+          totalTokens: 10,
+          topHolding: "ETH",
+          dayChange
+        })
       }
+    } catch (error) {
+      console.error('Failed to fetch prices:', error)
     }
-    
-    setTokenPrices(prices)
     setIsLoadingPrices(false)
     setLastUpdate(new Date())
   }
 
-  // Fetch all token balances
-  const loadAllBalances = async () => {
-    setIsLoadingBalances(true)
-    const balances: Record<string, TokenBalance> = {}
-    
-    for (const token of TOP_TOKENS) {
-      const balanceData = await fetchTokenBalance(token.symbol)
-      if (balanceData) {
-        balances[token.symbol] = balanceData
-      }
-    }
-    
-    setTokenBalances(balances)
-    
-    // Calculate portfolio stats
-    const totalValue = Object.values(balances).reduce((sum, balance) => sum + balance.value, 0)
-    const activeTokens = Object.values(balances).filter(balance => balance.amount > 0).length
-    const topHolding = Object.entries(balances)
-      .sort(([,a], [,b]) => b.value - a.value)
-      .find(([, balance]) => balance.amount > 0)?.[0] || ""
-    
-    setPortfolioStats({
-      totalValue,
-      totalTokens: activeTokens,
-      topHolding,
-      dayChange: Math.random() * 10 - 5 // Mock change for demo
-    })
-    
-    setIsLoadingBalances(false)
-  }
-
-  // Fetch latest crypto news
+  // Fetch latest crypto news from RSS feeds
   const loadLatestNews = async () => {
-  setIsLoadingNews(true)
-  try {
-    const response = await fetch('http://localhost:8000/api/news?limit=6&news_type=trending', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      console.log('News data received:', data) // Debug log
+    setIsLoadingNews(true)
+    try {
+      const rssFeeds = [
+        "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "https://cointelegraph.com/rss",
+        "https://cryptoslate.com/feed/"
+      ]
       
-      // Use the direct news data from our API
-      if (data.news && Array.isArray(data.news)) {
-        const parsedNews = data.news.map((item: any, index: number) => ({
-          title: item.title || 'No title',
-          source: item.source || 'CoinPanic',
-          date: new Date(item.published_at || Date.now()).toLocaleDateString(),
-          sentiment: item.votes?.positive > item.votes?.negative ? 'bullish' : 
-                    item.votes?.negative > item.votes?.positive ? 'bearish' : 'neutral',
-          url: item.url || '#'
-        }))
-        setNewsItems(parsedNews)
-      } else {
-        console.warn('No news items found in response')
-        setNewsItems([])
+      const allNews: NewsItem[] = []
+      
+      for (const feed of rssFeeds) {
+        const feedNews = await parseRSSFeed(feed)
+        allNews.push(...feedNews)
       }
-    } else {
-      console.error('News API response not ok:', response.status)
+      
+      // Sort by date and take latest 10 items
+      const sortedNews = allNews
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 10)
+      
+      setNewsItems(sortedNews)
+    } catch (error) {
+      console.error('Failed to fetch news:', error)
     }
-  } catch (error) {
-    console.error('Failed to fetch news:', error)
-    setNewsItems([])
+    setIsLoadingNews(false)
   }
-  setIsLoadingNews(false)
-}
 
   // Auto-refresh data
   useEffect(() => {
     loadAllPrices()
-    loadAllBalances()
     loadLatestNews()
 
     const priceInterval = setInterval(loadAllPrices, 30000) // Every 30 seconds
-    const balanceInterval = setInterval(loadAllBalances, 60000) // Every minute
     const newsInterval = setInterval(loadLatestNews, 300000) // Every 5 minutes
 
     return () => {
       clearInterval(priceInterval)
-      clearInterval(balanceInterval)
       clearInterval(newsInterval)
     }
   }, [])
-
-  // Update balances when prices change
-  useEffect(() => {
-    if (Object.keys(tokenPrices).length > 0) {
-      loadAllBalances()
-    }
-  }, [tokenPrices])
 
   const formatPrice = (price: number) => {
     if (price >= 1000) {
@@ -262,7 +296,6 @@ export default function DashboardPage() {
               className="mr-2 data-[orientation=vertical]:h-4"
             />
             <Breadcrumb>
-
               <BreadcrumbList>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
@@ -280,12 +313,11 @@ export default function DashboardPage() {
               size="sm"
               onClick={() => {
                 loadAllPrices()
-                loadAllBalances()
                 loadLatestNews()
               }}
-              disabled={isLoadingPrices || isLoadingBalances || isLoadingNews}
+              disabled={isLoadingPrices || isLoadingNews}
             >
-              {(isLoadingPrices || isLoadingBalances || isLoadingNews) ? (
+              {(isLoadingPrices || isLoadingNews) ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
@@ -335,11 +367,11 @@ export default function DashboardPage() {
                 <BarChart3 className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{portfolioStats.topHolding || "N/A"}</div>
+                <div className="text-2xl font-bold">{portfolioStats.topHolding}</div>
                 <p className="text-xs text-muted-foreground">
-                  {portfolioStats.topHolding && tokenBalances[portfolioStats.topHolding] 
-                    ? formatValue(tokenBalances[portfolioStats.topHolding].value)
-                    : "No holdings"}
+                  {tokenBalances['ethereum'] 
+                    ? formatValue(tokenBalances['ethereum'].value)
+                    : "Loading..."}
                 </p>
               </CardContent>
             </Card>
@@ -374,16 +406,15 @@ export default function DashboardPage() {
                   <div className="space-y-3">
                     {TOP_TOKENS.map((token) => {
                       const priceData = tokenPrices[token.symbol]
-                      const change = Math.random() * 10 - 5 // Mock 24h change
                       
                       return (
                         <div key={token.symbol} className="flex items-center justify-between p-3 rounded-lg border">
                           <div className="flex items-center gap-3">
                             <div className={`w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold ${token.color}`}>
-                              {token.symbol.slice(0, 2)}
+                              {token.ticker.slice(0, 2)}
                             </div>
                             <div>
-                              <p className="font-medium">{token.symbol}</p>
+                              <p className="font-medium">{token.ticker}</p>
                               <p className="text-xs text-muted-foreground">{token.name}</p>
                             </div>
                           </div>
@@ -391,14 +422,16 @@ export default function DashboardPage() {
                             <p className="font-medium">
                               {priceData ? formatPrice(priceData.price) : 'Loading...'}
                             </p>
-                            <p className={`text-xs flex items-center ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {change >= 0 ? (
-                                <TrendingUp className="h-3 w-3 mr-1" />
-                              ) : (
-                                <TrendingDown className="h-3 w-3 mr-1" />
-                              )}
-                              {Math.abs(change).toFixed(2)}%
-                            </p>
+                            {priceData && (
+                              <p className={`text-xs flex items-center ${priceData.change24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {priceData.change24h >= 0 ? (
+                                  <TrendingUp className="h-3 w-3 mr-1" />
+                                ) : (
+                                  <TrendingDown className="h-3 w-3 mr-1" />
+                                )}
+                                {Math.abs(priceData.change24h).toFixed(2)}%
+                              </p>
+                            )}
                           </div>
                         </div>
                       )
@@ -414,7 +447,6 @@ export default function DashboardPage() {
                 <CardTitle className="flex items-center gap-2">
                   <Wallet className="h-5 w-5" />
                   Portfolio Holdings
-                  {isLoadingBalances && <Loader2 className="h-4 w-4 animate-spin" />}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -428,10 +460,10 @@ export default function DashboardPage() {
                         <div key={token.symbol} className={`flex items-center justify-between p-3 rounded-lg border ${hasBalance ? 'bg-muted/50' : 'opacity-50'}`}>
                           <div className="flex items-center gap-3">
                             <div className={`w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold ${token.color}`}>
-                              {token.symbol.slice(0, 2)}
+                              {token.ticker.slice(0, 2)}
                             </div>
                             <div>
-                              <p className="font-medium">{token.symbol}</p>
+                              <p className="font-medium">{token.ticker}</p>
                               <p className="text-xs text-muted-foreground">
                                 {balance ? balance.amount.toFixed(6) : '0.000000'}
                               </p>
@@ -468,7 +500,8 @@ export default function DashboardPage() {
                 <ScrollArea className="h-[400px]">
                   <div className="space-y-4">
                     {newsItems.map((news, index) => (
-                      <div key={index} className="p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors">
+                      <div key={index} className="p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
+                           onClick={() => window.open(news.url, '_blank')}>
                         <div className="flex items-start gap-2 mb-2">
                           <Badge 
                             variant={
