@@ -12,24 +12,29 @@ class ApiClient {
   async request(endpoint: string, options: RequestInit = {}) {
     const url = getApiUrl(endpoint)
     
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
     const defaultOptions: RequestInit = {
-      timeout: this.timeout,
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
+      signal: controller.signal,
       ...options,
     }
 
     try {
       const response = await fetch(url, defaultOptions)
-      
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
       
       return await response.json()
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error(`API request failed for ${endpoint}:`, error)
       throw error
     }
