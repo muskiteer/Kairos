@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Bot, Wallet, CheckCircle, AlertTriangle, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/hooks/use-auth"
 
 declare global {
   interface Window {
@@ -13,76 +14,40 @@ declare global {
   }
 }
 
-interface WalletInfo {
-  address: string
-  chainId: string
-  isConnected: boolean
-}
-
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { login, isAuthenticated, isLoading } = useAuth()
+  
   const [isConnecting, setIsConnecting] = useState(false)
-  const [wallet, setWallet] = useState<WalletInfo | null>(null)
   const [error, setError] = useState("")
   const [isMetaMaskInstalled, setIsMetaMaskInstalled] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
+
+  // Get redirect destination
+  const redirectTo = searchParams.get('from') || '/dashboard'
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      setRedirecting(true)
+      router.push(redirectTo)
+    }
+  }, [isAuthenticated, isLoading, router, redirectTo])
 
   // Check if MetaMask is installed
   useEffect(() => {
     const checkMetaMask = () => {
       if (typeof window !== "undefined" && window.ethereum) {
         setIsMetaMaskInstalled(true)
-        // Check if already connected
-        checkConnection()
       }
     }
 
     checkMetaMask()
-    
-    // Listen for account changes
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
-      window.ethereum.on('chainChanged', handleChainChanged)
-    }
-
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-        window.ethereum.removeListener('chainChanged', handleChainChanged)
-      }
-    }
   }, [])
-
-  const checkConnection = async () => {
-    try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
-      if (accounts.length > 0) {
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' })
-        setWallet({
-          address: accounts[0],
-          chainId,
-          isConnected: true
-        })
-      }
-    } catch (error) {
-      console.error('Error checking connection:', error)
-    }
-  }
-
-  const handleAccountsChanged = (accounts: string[]) => {
-    if (accounts.length === 0) {
-      setWallet(null)
-      setError("")
-    } else {
-      setWallet(prev => prev ? { ...prev, address: accounts[0] } : null)
-    }
-  }
-
-  const handleChainChanged = (chainId: string) => {
-    setWallet(prev => prev ? { ...prev, chainId } : null)
-  }
 
   const connectWallet = async () => {
     if (!isMetaMaskInstalled) {
@@ -108,14 +73,13 @@ export function LoginForm({
           isConnected: true
         }
 
-        setWallet(walletInfo)
-
-        // Store wallet info in localStorage for persistence
-        localStorage.setItem('kairos_wallet', JSON.stringify(walletInfo))
+        // Use the auth hook to login
+        login(walletInfo)
         
         // Small delay to show success state
         setTimeout(() => {
-          router.push('/dashboard')
+          setRedirecting(true)
+          router.push(redirectTo)
         }, 1000)
       }
     } catch (error: any) {
@@ -124,32 +88,48 @@ export function LoginForm({
       if (error.code === 4001) {
         setError("Connection rejected. Please accept the connection request to continue.")
       } else {
-        setError("Failed to connect wallet. Please try again.")
+        setError(`Failed to connect wallet: ${error.message || 'Unknown error'}`)
       }
     } finally {
       setIsConnecting(false)
     }
   }
 
-  const disconnectWallet = () => {
-    setWallet(null)
-    localStorage.removeItem('kairos_wallet')
-    setError("")
-  }
+  // Handle MetaMask account changes
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (accounts.length === 0) {
+          // User logged out from MetaMask
+          console.log('MetaMask: User disconnected all accounts')
+        }
+      }
 
-  const formatAddress = (address: string) => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`
-  }
-
-  const getChainName = (chainId: string) => {
-    const chains: { [key: string]: string } = {
-      '0x1': 'Ethereum Mainnet',
-      '0x89': 'Polygon',
-      '0x38': 'BSC',
-      '0xa4b1': 'Arbitrum',
-      '0x2105': 'Base'
+      window.ethereum.on('accountsChanged', handleAccountsChanged)
+      
+      return () => {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
+      }
     }
-    return chains[chainId] || 'Unknown Network'
+  }, [])
+
+  // Don't render form if already authenticated or redirecting
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  if (isAuthenticated || redirecting) {
+    return (
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Redirecting to dashboard...</p>
+      </div>
+    )
   }
 
   return (
@@ -163,6 +143,11 @@ export function LoginForm({
           <p className="text-center text-sm text-muted-foreground">
             Connect your wallet to access autonomous crypto trading powered by AI
           </p>
+          {redirectTo !== '/dashboard' && (
+            <p className="text-center text-xs text-muted-foreground">
+              You'll be redirected to: {redirectTo}
+            </p>
+          )}
         </div>
 
         {/* Error Message */}
@@ -175,89 +160,55 @@ export function LoginForm({
           </Alert>
         )}
 
-        {/* Wallet Connection Status */}
-        {wallet?.isConnected ? (
-          <div className="space-y-4">
-            <Alert className="border-green-200 bg-green-50 dark:bg-green-950">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-700 dark:text-green-300">
-                <div className="space-y-1">
-                  <p className="font-medium">Wallet Connected Successfully!</p>
-                  <p className="text-sm">Address: {formatAddress(wallet.address)}</p>
-                  <p className="text-sm">Network: {getChainName(wallet.chainId)}</p>
-                </div>
-              </AlertDescription>
-            </Alert>
-
-            <div className="flex flex-col gap-3">
-              <Button 
-                onClick={() => router.push('/dashboard')}
-                className="w-full"
-                size="lg"
-              >
-                Continue to Dashboard
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                onClick={disconnectWallet}
-                className="w-full"
-              >
-                Disconnect Wallet
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* MetaMask Connection */}
-            <Button 
-              onClick={connectWallet}
-              disabled={isConnecting || !isMetaMaskInstalled}
-              className="w-full"
-              size="lg"
-            >
-              {isConnecting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <Wallet className="mr-2 h-4 w-4" />
-                  Connect with MetaMask
-                </>
-              )}
-            </Button>
-
-            {/* Install MetaMask Button */}
-            {!isMetaMaskInstalled && (
-              <Button 
-                variant="outline"
-                onClick={() => window.open('https://metamask.io/download/', '_blank')}
-                className="w-full"
-              >
-                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                Install MetaMask
-              </Button>
+        <div className="space-y-4">
+          {/* MetaMask Connection */}
+          <Button 
+            onClick={connectWallet}
+            disabled={isConnecting || !isMetaMaskInstalled}
+            className="w-full"
+            size="lg"
+          >
+            {isConnecting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                <Wallet className="mr-2 h-4 w-4" />
+                Connect with MetaMask
+              </>
             )}
+          </Button>
 
-            {/* Supported Wallets Info */}
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground mb-2">Supported Wallets</p>
-              <div className="flex justify-center space-x-4">
-                <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                  <Wallet className="h-3 w-3" />
-                  <span>MetaMask</span>
-                </div>
+          {/* Install MetaMask Button */}
+          {!isMetaMaskInstalled && (
+            <Button 
+              variant="outline"
+              onClick={() => window.open('https://metamask.io/download/', '_blank')}
+              className="w-full"
+            >
+              <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Install MetaMask
+            </Button>
+          )}
+
+          {/* Supported Wallets Info */}
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground mb-2">Supported Wallets</p>
+            <div className="flex justify-center space-x-4">
+              <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+                <Wallet className="h-3 w-3" />
+                <span>MetaMask</span>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Features Preview */}
         <div className="space-y-3 p-4 bg-muted rounded-lg">

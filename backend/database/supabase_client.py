@@ -260,7 +260,7 @@ class EnhancedSupabaseClient:
             return []
 
     def upsert_strategy(self, session_id: str, strategy_name: str, strategy_type: str = "custom") -> Optional[str]:
-        """Upsert AI strategy"""
+        """Upsert AI strategy with proper schema compliance"""
         
         if self.mock_mode:
             mock_id = f"mock_strategy_{uuid.uuid4()}"
@@ -271,17 +271,47 @@ class EnhancedSupabaseClient:
             strategy_type_mapping = {
                 'momentum': 'momentum', 'arbitrage': 'arbitrage', 'dca': 'dca',
                 'swing': 'swing', 'scalping': 'scalping', 'hodl': 'hodl',
-                'hold': 'hodl', 'custom': 'custom'
+                'hold': 'hodl', 'custom': 'custom', 'system_error': 'custom',
+                'unknown_ai_strategy': 'custom', 'hodl_empty_portfolio': 'hodl',
+                'momentum_trading': 'momentum', 'arbitrage_opportunity': 'arbitrage',
+                'system_error_recovery': 'hodl'
             }
             
             db_strategy_type = strategy_type_mapping.get(strategy_type.lower(), 'custom')
             
+            # Create comprehensive strategy data matching database schema
             strategy_data = {
                 'session_id': session_id,
                 'strategy_name': strategy_name,
                 'strategy_type': db_strategy_type,
-                'strategy_description': f"AI strategy: {strategy_name}",
+                'strategy_description': f"AI-generated {db_strategy_type} strategy: {strategy_name}",
+                'strategy_parameters': {  # Required field - must not be NULL
+                    'auto_generated': True,
+                    'ai_engine': 'gemini-1.5-pro',
+                    'strategy_type': db_strategy_type,
+                    'creation_timestamp': datetime.utcnow().isoformat(),
+                    'risk_tolerance': 'moderate',
+                    'position_sizing': 'conservative'
+                },
+                'performance_metrics': {
+                    'usage_count': 0,
+                    'total_executions': 0,
+                    'successful_executions': 0,
+                    'creation_time': datetime.utcnow().isoformat()
+                },
                 'success_rate': 0.0,
+                'total_return': 0.0,
+                'max_drawdown': None,
+                'sharpe_ratio': None,
+                'win_rate': None,
+                'avg_trade_duration': None,
+                'strategy_embedding': None,  # Will be populated later if needed
+                'market_conditions': {},
+                'risk_assessment': {
+                    'risk_level': 'medium',
+                    'position_sizing': 'conservative',
+                    'max_position_size': 0.5
+                },
                 'is_active': True
             }
             
@@ -289,15 +319,20 @@ class EnhancedSupabaseClient:
             
             if result.data:
                 strategy_id = result.data[0].get('id')
-                print(f"✅ Strategy upserted: {strategy_id[:8]}...")
+                print(f"✅ Strategy '{strategy_name}' upserted successfully: {strategy_id[:8]}...")
                 return strategy_id
             else:
+                print("⚠️ Strategy upserted but no ID returned")
                 return str(uuid.uuid4())
                 
         except Exception as e:
             print(f"❌ Error upserting strategy: {e}")
+            # Log detailed error for debugging
+            import traceback
+            traceback.print_exc()
             return None
-
+        
+        
     def update_strategy_performance(self, strategy_id: str, success: bool, performance_data: dict):
         """Update strategy performance"""
         
