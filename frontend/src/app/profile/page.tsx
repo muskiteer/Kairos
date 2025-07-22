@@ -66,7 +66,6 @@ interface UserProfile {
   avatar_url: string
   wallet_address: string
   recall_api_key: string
-  coinpanic_api_key: string
   consent_terms: boolean
   consent_risks: boolean
   consent_data: boolean
@@ -84,7 +83,6 @@ export default function ProfilePage() {
     avatar_url: avatarOptions[0],
     wallet_address: '',
     recall_api_key: '',
-    coinpanic_api_key: '',
     consent_terms: false,
     consent_risks: false,
     consent_data: false,
@@ -375,33 +373,6 @@ export default function ProfilePage() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Required for executing trades on the blockchain
-                </p>
-              </div>
-
-              {/* CoinPanic API Key (Optional) */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="coinpanic-api">
-                    CoinPanic API Key (Optional)
-                  </Label>
-                  <a 
-                    href="https://cryptopanic.com/developers/api/" 
-                    target="_blank" 
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                  >
-                    Get API Key
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-                <Input
-                  id="coinpanic-api"
-                  type={showApiKeys ? "text" : "password"}
-                  value={profile.coinpanic_api_key}
-                  onChange={(e) => updateProfile('coinpanic_api_key', e.target.value)}
-                  placeholder="Enter your CoinPanic API key (optional)"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Enhanced news analysis and market sentiment features
                 </p>
               </div>
             </CardContent>

@@ -26,37 +26,63 @@ function safeJsonParse(jsonString: string | undefined) {
   }
 }
 
+// Helper function to validate wallet data
+function isValidWalletData(walletData: any): boolean {
+  return Boolean(
+    walletData &&
+    typeof walletData === 'object' &&
+    walletData.isConnected === true &&
+    walletData.address &&
+    typeof walletData.address === 'string' &&
+    walletData.address.length > 0 &&
+    walletData.chainId &&
+    typeof walletData.chainId === 'string'
+  )
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   
+  // Skip middleware for static files and API routes
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.match(/\.(svg|png|jpg|jpeg|gif|webp|ico|css|js)$/)
+  ) {
+    return NextResponse.next()
+  }
+
   // Check if the route is public
   const isPublicRoute = publicRoutes.includes(pathname)
   
   // Check if the route is protected
   const isProtectedRoute = protectedRoutes.some(route => 
     pathname.startsWith(route)
-  ) || (pathname.startsWith('/_next') === false && !pathname.match(/\.(svg|png|jpg|jpeg|gif|webp)$/))
+  )
 
   // Get the wallet token from cookies
   const walletToken = request.cookies.get('kairos_wallet')?.value
   
-  // Parse wallet data if available
+  // Parse and validate wallet data
   let isAuthenticated = false
   if (walletToken) {
-    try {
-      const walletData = safeJsonParse(walletToken)
-      isAuthenticated = Boolean(walletData?.isConnected && walletData?.address)
-    } catch (error) {
-      // Invalid wallet data
-      isAuthenticated = false
-    }
+    const walletData = safeJsonParse(walletToken)
+    isAuthenticated = isValidWalletData(walletData)
   }
 
-  // If accessing a protected route without authentication
-  if (isProtectedRoute && !isAuthenticated && !isPublicRoute) {
-    // Redirect to login page
+  // If accessing a protected route without valid authentication
+  if (isProtectedRoute && !isAuthenticated) {
+    console.log(`Access denied to ${pathname} - not authenticated`)
+    
+    // Clear invalid cookie if it exists
+    const response = NextResponse.redirect(new URL('/login', request.url))
+    if (walletToken) {
+      response.cookies.delete('kairos_wallet')
+    }
+    
+    // Save intended destination
     const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('from', pathname) // Save intended destination
+    loginUrl.searchParams.set('from', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
@@ -64,7 +90,13 @@ export function middleware(request: NextRequest) {
   if (pathname === '/login' && isAuthenticated) {
     // Check if there's a redirect destination
     const from = request.nextUrl.searchParams.get('from')
-    const redirectUrl = new URL(from || '/dashboard', request.url)
+    
+    // Validate the redirect destination
+    const redirectPath = from && protectedRoutes.some(route => from.startsWith(route)) 
+      ? from 
+      : '/dashboard'
+    
+    const redirectUrl = new URL(redirectPath, request.url)
     return NextResponse.redirect(redirectUrl)
   }
 
@@ -74,8 +106,21 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(dashboardUrl)
   }
 
-  // Allow the request to continue
-  return NextResponse.next()
+  // If accessing root without authentication, redirect to login
+  if (pathname === '/' && !isAuthenticated) {
+    const loginUrl = new URL('/login', request.url)
+    return NextResponse.redirect(loginUrl)
+  }
+
+  // For all other cases, ensure the cookie is properly set or cleared
+  const response = NextResponse.next()
+  
+  // If we have invalid wallet data in cookie, clear it
+  if (walletToken && !isAuthenticated) {
+    response.cookies.delete('kairos_wallet')
+  }
+
+  return response
 }
 
 export const config = {
@@ -86,8 +131,8 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public files (public folder)
+     * - public files (files with extensions)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',
   ],
 }
