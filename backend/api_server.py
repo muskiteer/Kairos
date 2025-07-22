@@ -19,6 +19,19 @@ sys.path.append(backend_dir)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(backend_dir, '.env'))
 
+PORT = int(os.environ.get("PORT", 8000))
+
+FRONTEND_URLS = [
+    "https://kairos-frontend.onrender.com",  # Replace with your actual frontend URL
+    "http://localhost:3000",  # For local development
+    "http://localhost:3001"
+]
+
+if os.getenv("ENVIRONMENT") == "production":
+    ALLOWED_ORIGINS = [url for url in FRONTEND_URLS if url.startswith("https://")]
+else:
+    ALLOWED_ORIGINS = FRONTEND_URLS
+
 # Import the specific, refactored agent and necessary functions
 try:
     from agent.kairos_autonomous_agent import KairosAutonomousAgent
@@ -46,12 +59,17 @@ except ImportError:
         get_trades_data = lambda x: {"trades": []}
 
 # Initialize FastAPI app
-app = FastAPI(title="Kairos Autonomous Trading API", version="3.0.0")
+app = FastAPI(
+    title="Kairos Autonomous Trading API", 
+    version="3.0.0",
+    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
+    redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None
+)
 
 # Add CORS middleware to allow frontend connections
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -182,7 +200,12 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "healthy", 
+        "timestamp": datetime.now().isoformat(),
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "version": "3.0.0"
+    }
 
 @app.get("/api/balance/{token}")
 async def get_token_balance(token: str):
@@ -861,9 +884,14 @@ async def get_trade_history(user_id: str = "default"):
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Kairos Autonomous Trading API Server (v3.0)...")
-    print("🔗 API Documentation: http://localhost:8000/docs")
-    print("💬 Assistant Mode: /api/chat/assistant")
-    print("🤖 Agent Mode: /api/chat")
-    print("📊 Health Check: http://localhost:8000/health")
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+    print(f"🚀 Starting Kairos Autonomous Trading API Server (v3.0) on port {PORT}...")
+    print(f"🌍 Environment: {os.getenv('ENVIRONMENT', 'development')}")
+    print(f"🔗 Allowed Origins: {ALLOWED_ORIGINS}")
+    
+    # Use the PORT environment variable for production
+    uvicorn.run(
+        "api_server:app", 
+        host="0.0.0.0", 
+        port=PORT, 
+        reload=os.getenv("ENVIRONMENT") != "production"
+    )
