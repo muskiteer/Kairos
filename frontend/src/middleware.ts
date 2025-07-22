@@ -17,7 +17,7 @@ const protectedRoutes = [
 // Helper function to safely parse JSON
 function safeJsonParse(jsonString: string | undefined) {
   if (!jsonString) return null
-  
+
   try {
     return JSON.parse(jsonString)
   } catch (error) {
@@ -42,7 +42,7 @@ function isValidWalletData(walletData: any): boolean {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  
+
   // Skip middleware for static files and API routes
   if (
     pathname.startsWith('/_next') ||
@@ -54,15 +54,15 @@ export function middleware(request: NextRequest) {
 
   // Check if the route is public
   const isPublicRoute = publicRoutes.includes(pathname)
-  
+
   // Check if the route is protected
-  const isProtectedRoute = protectedRoutes.some(route => 
+  const isProtectedRoute = protectedRoutes.some(route =>
     pathname.startsWith(route)
   )
 
   // Get the wallet token from cookies
   const walletToken = request.cookies.get('kairos_wallet')?.value
-  
+
   // Parse and validate wallet data
   let isAuthenticated = false
   if (walletToken) {
@@ -70,52 +70,38 @@ export function middleware(request: NextRequest) {
     isAuthenticated = isValidWalletData(walletData)
   }
 
-  // If accessing a protected route without valid authentication
+  // ✅ Allow access to public routes
+  if (isPublicRoute) {
+    return NextResponse.next()
+  }
+
+  // ❌ Block unauthenticated users from protected routes
   if (isProtectedRoute && !isAuthenticated) {
     console.log(`Access denied to ${pathname} - not authenticated`)
-    
-    // Clear invalid cookie if it exists
-    const response = NextResponse.redirect(new URL('/login', request.url))
+
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('from', pathname)
+
+    const response = NextResponse.redirect(loginUrl)
     if (walletToken) {
       response.cookies.delete('kairos_wallet')
     }
-    
-    // Save intended destination
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('from', pathname)
-    return NextResponse.redirect(loginUrl)
+
+    return response
   }
 
-  // If accessing login page while already authenticated
+  // 🚫 Prevent access to /login if already authenticated
   if (pathname === '/login' && isAuthenticated) {
-    // Check if there's a redirect destination
     const from = request.nextUrl.searchParams.get('from')
-    
-    // Validate the redirect destination
-    const redirectPath = from && protectedRoutes.some(route => from.startsWith(route)) 
-      ? from 
+    const redirectPath = from && protectedRoutes.some(route => from.startsWith(route))
+      ? from
       : '/dashboard'
-    
-    const redirectUrl = new URL(redirectPath, request.url)
-    return NextResponse.redirect(redirectUrl)
+
+    return NextResponse.redirect(new URL(redirectPath, request.url))
   }
 
-  // If accessing root while authenticated, redirect to dashboard
-  if (pathname === '/' && isAuthenticated) {
-    const dashboardUrl = new URL('/dashboard', request.url)
-    return NextResponse.redirect(dashboardUrl)
-  }
-
-  // If accessing root without authentication, redirect to login
-  if (pathname === '/' && !isAuthenticated) {
-    const loginUrl = new URL('/login', request.url)
-    return NextResponse.redirect(loginUrl)
-  }
-
-  // For all other cases, ensure the cookie is properly set or cleared
+  // 🧹 Clean up invalid cookies if any
   const response = NextResponse.next()
-  
-  // If we have invalid wallet data in cookie, clear it
   if (walletToken && !isAuthenticated) {
     response.cookies.delete('kairos_wallet')
   }
@@ -125,14 +111,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (files with extensions)
-     */
     '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',
   ],
 }
