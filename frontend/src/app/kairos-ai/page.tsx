@@ -38,6 +38,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { 
   Bot, 
   User, 
@@ -115,7 +116,7 @@ export default function AIAgentPage() {
   const [sessionPolling, setSessionPolling] = useState<NodeJS.Timeout | null>(null)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -459,7 +460,7 @@ export default function AIAgentPage() {
           </div>
         </header>
 
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <div className="flex flex-1 flex-col gap-6 p-6 pt-0 h-full">
           {/* AI Mode Selector & Session Controls */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -583,192 +584,202 @@ export default function AIAgentPage() {
             )}
           </div>
 
-          {/* Main Chat Interface */}
-          <Card className="flex-1 flex flex-col">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+          {/* Main Chat Interface - Full Height */}
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Chat Header */}
+            <div className="flex items-center justify-between pb-4">
+              <div className="flex items-center gap-2">
                 {aiMode === 'agent' ? (
                   <>
-                    <Bot className="h-5 w-5 text-primary" />
-                    Autonomous Trading Agent
-                    <Badge variant="outline" className="ml-auto">
+                    <Bot className="h-6 w-6 text-primary" />
+                    <h2 className="text-xl font-semibold">Autonomous Trading Agent</h2>
+                    <Badge variant="outline" className="ml-2">
                       🔥 Real Trading
                     </Badge>
                   </>
                 ) : (
                   <>
-                    <MessageSquare className="h-5 w-5 text-primary" />
-                    AI Assistant
-                    <Badge variant="outline" className="ml-auto">
+                    <MessageSquare className="h-6 w-6 text-primary" />
+                    <h2 className="text-xl font-semibold">AI Assistant</h2>
+                    <Badge variant="outline" className="ml-2">
                       💬 Interactive Chat
                     </Badge>
                   </>
                 )}
-              </CardTitle>
-            </CardHeader>
-            
-            <CardContent className="flex-1 flex flex-col p-0">
-              {/* Messages Area */}
-              <ScrollArea className="flex-1 p-4">
-                <div className="space-y-4">
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex gap-3 ${
-                        message.type === 'user' ? 'justify-end' : 'justify-start'
-                      }`}
-                    >
-                      {message.type !== 'user' && (
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className={
-                            message.type === 'system' ? 'bg-blue-500 text-white' : 
-                            message.type === 'trading-update' ? 'bg-green-500 text-white' :
-                            message.type === 'session-end' ? 'bg-purple-500 text-white' :
-                            'bg-primary text-primary-foreground'
-                          }>
-                            {message.type === 'system' ? '⚡' : 
-                             message.type === 'trading-update' ? '📈' :
-                             message.type === 'session-end' ? '🏁' :
-                             <Bot className="h-4 w-4" />}
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-                      
-                      <div
-                        className={`max-w-[80%] rounded-lg p-3 ${
-                          message.type === 'user'
-                            ? 'bg-primary text-primary-foreground'
-                            : message.type === 'system'
-                            ? 'bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800'
-                            : message.type === 'trading-update'
-                            ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800'
-                            : message.type === 'session-end'
-                            ? 'bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800'
-                            : 'bg-muted'
-                        }`}
-                      >
-                        {message.type === 'user' ? (
-                          <p className="text-sm">{message.content}</p>
-                        ) : (
-                          <div className="text-sm">
-                            {formatMessage(message.content)}
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10">
-                          <span className="text-xs opacity-70">
-                            {message.timestamp.toLocaleTimeString()}
-                          </span>
-                          {message.intent && (
-                            <div className="flex items-center gap-1">
-                              <Badge variant="secondary" className="text-xs">
-                                {message.intent}
-                              </Badge>
-                              {message.confidence && (
-                                <Badge variant="outline" className="text-xs">
-                                  {Math.round(message.confidence * 100)}%
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {message.type === 'user' && (
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-secondary">
-                            <User className="h-4 w-4" />
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-                    </div>
-                  ))}
-                  
-                  {isLoading && (
-                    <div className="flex gap-3 justify-start">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-primary text-primary-foreground">
-                          <Bot className="h-4 w-4" />
+              </div>
+            </div>
+
+            {/* Messages Area - Flexible Height */}
+            <ScrollArea className="flex-1 rounded-lg border bg-background p-0">
+              <div className="space-y-6 p-6">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex gap-4 ${
+                      message.type === 'user' ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    {message.type !== 'user' && (
+                      <Avatar className="h-10 w-10 flex-shrink-0">
+                        <AvatarFallback className={
+                          message.type === 'system' ? 'bg-blue-500 text-white' : 
+                          message.type === 'trading-update' ? 'bg-green-500 text-white' :
+                          message.type === 'session-end' ? 'bg-purple-500 text-white' :
+                          'bg-primary text-primary-foreground'
+                        }>
+                          {message.type === 'system' ? '⚡' : 
+                           message.type === 'trading-update' ? '📈' :
+                           message.type === 'session-end' ? '🏁' :
+                           <Bot className="h-5 w-5" />}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="bg-muted rounded-lg p-3">
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-sm text-muted-foreground">
-                            {aiMode === 'agent' ? 'Starting trading session...' : 'AI is thinking...'}
-                          </span>
+                    )}
+                    
+                    <div
+                      className={`max-w-[85%] rounded-xl p-4 ${
+                        message.type === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : message.type === 'system'
+                          ? 'bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800'
+                          : message.type === 'trading-update'
+                          ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800'
+                          : message.type === 'session-end'
+                          ? 'bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800'
+                          : 'bg-muted'
+                      }`}
+                    >
+                      {message.type === 'user' ? (
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                      ) : (
+                        <div className="text-sm leading-relaxed">
+                          {formatMessage(message.content)}
                         </div>
+                      )}
+                      
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-current/10">
+                        <span className="text-xs opacity-70">
+                          {message.timestamp.toLocaleTimeString()}
+                        </span>
+                        {message.intent && (
+                          <div className="flex items-center gap-1">
+                            <Badge variant="secondary" className="text-xs">
+                              {message.intent}
+                            </Badge>
+                            {message.confidence && (
+                              <Badge variant="outline" className="text-xs">
+                                {Math.round(message.confidence * 100)}%
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
-                <div ref={messagesEndRef} />
-              </ScrollArea>
-
-              {/* Input Area - Only show for Assistant mode */}
-              {aiMode === 'assistant' && (
-                <div className="p-4 border-t">
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {quickAssistantCommands.map((cmd, index) => (
-                      <Button
-                        key={index}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => setInput(cmd.command)}
-                        disabled={isLoading}
-                      >
-                        {cmd.label}
-                      </Button>
-                    ))}
+                    
+                    {message.type === 'user' && (
+                      <Avatar className="h-10 w-10 flex-shrink-0">
+                        <AvatarFallback className="bg-secondary">
+                          <User className="h-5 w-5" />
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
                   </div>
+                ))}
+                
+                {isLoading && (
+                  <div className="flex gap-4 justify-start">
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className="bg-primary text-primary-foreground">
+                        <Bot className="h-5 w-5" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="bg-muted rounded-xl p-4">
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span className="text-sm text-muted-foreground">
+                          {aiMode === 'agent' ? 'Starting trading session...' : 'AI is thinking...'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div ref={messagesEndRef} />
+            </ScrollArea>
 
-                  <div className="flex gap-2">
-                    <Input
+            {/* Input Area - Only show for Assistant mode */}
+            {aiMode === 'assistant' && (
+              <div className="pt-6">
+                {/* Quick Commands */}
+                <div className="flex flex-wrap gap-2 mb-4 justify-center">
+                  {quickAssistantCommands.map((cmd, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => setInput(cmd.command)}
+                      disabled={isLoading}
+                    >
+                      {cmd.label}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Centered Input Container */}
+                <div className="max-w-4xl mx-auto">
+                  <div className="relative">
+                    <Textarea
                       ref={inputRef}
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
-                      placeholder="Ask me about crypto prices, news, market analysis..."
+                      placeholder="Ask me about crypto prices, news, market analysis, trading strategies..."
                       disabled={isLoading}
-                      className="flex-1"
+                      className="min-h-[100px] pr-12 text-base resize-none rounded-xl border-2 focus:border-primary transition-colors"
+                      rows={3}
                     />
                     <Button 
                       onClick={sendAssistantMessage} 
                       disabled={!input.trim() || isLoading}
                       size="icon"
+                      className="absolute bottom-3 right-3 h-10 w-10 rounded-full"
                     >
                       {isLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-5 w-5 animate-spin" />
                       ) : (
-                        <Send className="h-4 w-4" />
+                        <Send className="h-5 w-5" />
                       )}
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground text-center mt-2">
+                    Press Enter to send, Shift+Enter for new line
+                  </p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Agent Mode Info Panel */}
-              {aiMode === 'agent' && !currentSession && (
-                <div className="p-4 border-t bg-muted/50">
-                  <div className="text-center space-y-2">
-                    <h3 className="font-medium">🤖 Autonomous Trading Agent</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Start a trading session to let the AI make autonomous trading decisions for you.
-                    </p>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setSessionDialogOpen(true)}
-                    >
-                      <Play className="h-4 w-4 mr-2" />
-                      Configure Session
-                    </Button>
-                  </div>
+            {/* Agent Mode Info Panel */}
+            {aiMode === 'agent' && !currentSession && (
+              <div className="pt-6">
+                <div className="max-w-2xl mx-auto text-center space-y-4 p-6 rounded-xl bg-muted/50">
+                  <h3 className="text-lg font-medium">🤖 Autonomous Trading Agent</h3>
+                  <p className="text-muted-foreground">
+                    Start a trading session to let the AI make autonomous trading decisions for you.
+                    The agent will analyze market conditions and execute trades based on advanced algorithms.
+                  </p>
+                  <Button 
+                    variant="outline" 
+                    size="lg"
+                    onClick={() => setSessionDialogOpen(true)}
+                    className="mt-2"
+                  >
+                    <Play className="h-5 w-5 mr-2" />
+                    Configure Trading Session
+                  </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            )}
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
