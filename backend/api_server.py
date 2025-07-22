@@ -109,7 +109,7 @@ def get_coingecko_price(token: str) -> float:
             "USDC": "usd-coin", "USDbC": "usd-coin", "WETH": "weth",
             "WBTC": "wrapped-bitcoin", "DAI": "dai", "USDT": "tether",
             "UNI": "uniswap", "LINK": "chainlink", "ETH": "ethereum",
-            "AAVE": "aave", "MATIC": "matic-network", "SOL": "solana",
+            "AAVE": "aave", "MATIC": "matic-network", "SOL": "solana","USDC_SOL": "usd-coin",
             "PEPE": "pepe", "SHIB": "shiba-inu", "BTC": "bitcoin"
         }
         
