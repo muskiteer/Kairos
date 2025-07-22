@@ -12,7 +12,8 @@ import {
   Wallet,
   Copy,
   ExternalLink,
-  CheckCircle
+  CheckCircle,
+  AlertTriangle
 } from "lucide-react"
 
 import {
@@ -37,6 +38,8 @@ import {
 } from "@/components/ui/sidebar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/hooks/use-auth"
 
 interface WalletInfo {
   address: string
@@ -47,35 +50,9 @@ interface WalletInfo {
 export function NavUser() {
   const { isMobile } = useSidebar()
   const router = useRouter()
-  const [wallet, setWallet] = useState<WalletInfo | null>(null)
+  const { wallet, logout, isAuthenticated } = useAuth()
   const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    // Load wallet info from localStorage
-    const loadWalletInfo = () => {
-      try {
-        const savedWallet = localStorage.getItem('kairos_wallet')
-        if (savedWallet) {
-          const walletInfo = JSON.parse(savedWallet)
-          setWallet(walletInfo)
-        }
-      } catch (error) {
-        console.error('Error loading wallet info:', error)
-      }
-    }
-
-    loadWalletInfo()
-
-    // Listen for storage changes (if user disconnects in another tab)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'kairos_wallet') {
-        loadWalletInfo()
-      }
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
-  }, [])
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -121,27 +98,54 @@ export function NavUser() {
         ? 'https://etherscan.io' 
         : wallet.chainId === '0x89'
         ? 'https://polygonscan.com'
+        : wallet.chainId === '0x38'
+        ? 'https://bscscan.com'
+        : wallet.chainId === '0xa4b1'
+        ? 'https://arbiscan.io'
+        : wallet.chainId === '0x2105'
+        ? 'https://basescan.org'
         : 'https://etherscan.io'
       
       window.open(`${baseUrl}/address/${wallet.address}`, '_blank')
     }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('kairos_wallet')
-    setWallet(null)
-    router.push('/')
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
+    
+    try {
+      // Disconnect from MetaMask if available
+      if (typeof window !== 'undefined' && window.ethereum) {
+        try {
+          // Some wallets support disconnect method
+          if (window.ethereum.disconnect) {
+            await window.ethereum.disconnect()
+          }
+        } catch (error) {
+          console.log('MetaMask disconnect not supported or failed:', error)
+        }
+      }
+      
+      // Call the logout function from auth context
+      logout()
+    } catch (error) {
+      console.error('Error during logout:', error)
+      // Force logout even if there's an error
+      logout()
+    } finally {
+      setIsLoggingOut(false)
+    }
   }
 
-  // If no wallet is connected, show connect prompt
-  if (!wallet?.isConnected) {
+  // If not authenticated or no wallet, show connect prompt
+  if (!isAuthenticated || !wallet?.isConnected) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
             size="lg"
             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/login')}
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
               <Wallet className="h-4 w-4" />
@@ -164,6 +168,7 @@ export function NavUser() {
             <SidebarMenuButton
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              disabled={isLoggingOut}
             >
               <div className="relative">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
@@ -183,7 +188,7 @@ export function NavUser() {
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
             side={isMobile ? "bottom" : "right"}
             align="end"
             sideOffset={4}
@@ -213,11 +218,11 @@ export function NavUser() {
             
             {/* Wallet Actions */}
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={copyAddress}>
+              <DropdownMenuItem onClick={copyAddress} disabled={isLoggingOut}>
                 {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 {copied ? 'Address Copied!' : 'Copy Address'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={openEtherscan}>
+              <DropdownMenuItem onClick={openEtherscan} disabled={isLoggingOut}>
                 <ExternalLink className="h-4 w-4" />
                 View on Explorer
               </DropdownMenuItem>
@@ -226,15 +231,18 @@ export function NavUser() {
             
             {/* Account Actions */}
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => router.push('/profile')}>
+              <DropdownMenuItem 
+                onClick={() => router.push('/profile')}
+                disabled={isLoggingOut}
+              >
                 <BadgeCheck className="h-4 w-4" />
                 Profile Settings
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled={isLoggingOut}>
                 <Bell className="h-4 w-4" />
                 Notifications
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled={isLoggingOut}>
                 <Sparkles className="h-4 w-4" />
                 Upgrade to Pro
               </DropdownMenuItem>
@@ -242,9 +250,22 @@ export function NavUser() {
             <DropdownMenuSeparator />
             
             {/* Logout */}
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
-              <LogOut className="h-4 w-4" />
-              Disconnect Wallet
+            <DropdownMenuItem 
+              onClick={handleLogout} 
+              disabled={isLoggingOut}
+              className="text-red-600 focus:text-red-600"
+            >
+              {isLoggingOut ? (
+                <>
+                  <div className="h-4 w-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                  Disconnecting...
+                </>
+              ) : (
+                <>
+                  <LogOut className="h-4 w-4" />
+                  Disconnect Wallet
+                </>
+              )}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

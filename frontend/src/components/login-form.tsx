@@ -25,18 +25,10 @@ export function LoginForm({
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState("")
   const [isMetaMaskInstalled, setIsMetaMaskInstalled] = useState(false)
-  const [redirecting, setRedirecting] = useState(false)
+  const [hasRedirected, setHasRedirected] = useState(false)
 
   // Get redirect destination
   const redirectTo = searchParams.get('from') || '/dashboard'
-
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      setRedirecting(true)
-      router.push(redirectTo)
-    }
-  }, [isAuthenticated, isLoading, router, redirectTo])
 
   // Check if MetaMask is installed
   useEffect(() => {
@@ -48,6 +40,16 @@ export function LoginForm({
 
     checkMetaMask()
   }, [])
+
+  // Handle redirect only once when authenticated
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && !hasRedirected) {
+      setHasRedirected(true)
+      
+      // Use replace to prevent back button issues
+      router.replace(redirectTo)
+    }
+  }, [isAuthenticated, isLoading, router, redirectTo, hasRedirected])
 
   const connectWallet = async () => {
     if (!isMetaMaskInstalled) {
@@ -76,11 +78,8 @@ export function LoginForm({
         // Use the auth hook to login
         login(walletInfo)
         
-        // Small delay to show success state
-        setTimeout(() => {
-          setRedirecting(true)
-          router.push(redirectTo)
-        }, 1000)
+        // Don't manually redirect here - let the useEffect handle it
+        console.log('Wallet connected successfully')
       }
     } catch (error: any) {
       console.error('Error connecting wallet:', error)
@@ -95,25 +94,7 @@ export function LoginForm({
     }
   }
 
-  // Handle MetaMask account changes
-  useEffect(() => {
-    if (window.ethereum) {
-      const handleAccountsChanged = (accounts: string[]) => {
-        if (accounts.length === 0) {
-          // User logged out from MetaMask
-          console.log('MetaMask: User disconnected all accounts')
-        }
-      }
-
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
-      
-      return () => {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-      }
-    }
-  }, [])
-
-  // Don't render form if already authenticated or redirecting
+  // Show loading spinner while checking authentication or redirecting
   if (isLoading) {
     return (
       <div className="flex flex-col items-center gap-4">
@@ -123,7 +104,8 @@ export function LoginForm({
     )
   }
 
-  if (isAuthenticated || redirecting) {
+  // Show redirecting state when authenticated
+  if (isAuthenticated || hasRedirected) {
     return (
       <div className="flex flex-col items-center gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -136,9 +118,9 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          {/* <div className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Bot className="size-8" />
-          </div>
+          </div> */}
           <h1 className="text-2xl font-bold">Welcome to Kairos AI</h1>
           <p className="text-center text-sm text-muted-foreground">
             Connect your wallet to access autonomous crypto trading powered by AI
