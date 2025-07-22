@@ -3,10 +3,10 @@ services:
   - type: web
     name: kairos-frontend
     env: node
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    buildCommand: pnpm install --no-frozen-lockfile && pnpm run build
+    startCommand: pnpm start
     envVars:
       - key: NODE_VERSION
-        value: 18.17.0
+        value: 20.14.0  # Use a maintained Node.js version
       - key: NEXT_PUBLIC_API_URL
         sync: false
