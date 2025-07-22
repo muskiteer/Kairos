@@ -630,17 +630,21 @@ async def stop_autonomous_session(session_id: str):
 async def download_session_report(session_id: str):
     """Generate and download PDF report for a trading session."""
     try:
+        print(f"📄 Generating report for session: {session_id}")
+        
         # Get session data from database
         session_result = supabase_client.client.table("trading_sessions").select("*").eq("id", session_id).execute()
         
         if not session_result.data:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
         
         session_data = session_result.data[0]
+        print(f"✅ Found session data for {session_id}")
         
         # Get trades for this session
         trades_result = supabase_client.client.table("trades").select("*").eq("session_id", session_id).execute()
         trades = trades_result.data if trades_result.data else []
+        print(f"📊 Found {len(trades)} trades for session")
         
         # Prepare data for report generation
         report_data = {
@@ -659,20 +663,75 @@ async def download_session_report(session_id: str):
         }
         
         # Generate PDF report
+        print("🔨 Generating PDF report...")
         output_path = generate_autonomous_session_report(report_data)
         
-        if os.path.exists(output_path):
-            return FileResponse(
-                path=output_path,
-                filename=f"kairos_session_{session_id[:8]}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                media_type="application/pdf"
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Failed to generate report")
+        if not output_path or not os.path.exists(output_path):
+            raise HTTPException(status_code=500, detail="Failed to generate PDF report")
+        
+        print(f"✅ PDF generated successfully: {output_path}")
+        
+        # Generate a nice filename for download
+        timestamp = datetime.now().strftime("%Y%m%d")
+        short_session_id = session_id[:8]
+        download_filename = f"Kairos_Trading_Report_{short_session_id}_{timestamp}.pdf"
+        
+        # Return the file with proper headers for browser download
+        return FileResponse(
+            path=output_path,
+            filename=download_filename,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={download_filename}",
+                "Content-Type": "application/pdf",
+                "Cache-Control": "no-cache",
+                "Access-Control-Allow-Origin": "*",  # Allow CORS for download
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Methods": "GET"
+            }
+        )
             
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error generating report: {e}")
+        print(f"❌ Error generating report: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
+
+@app.get("/api/session/report/{session_id}/info")
+async def get_session_report_info(session_id: str):
+    """Get information about a session for report generation (debugging)."""
+    try:
+        # Get session data
+        session_result = supabase_client.client.table("trading_sessions").select("*").eq("id", session_id).execute()
+        
+        if not session_result.data:
+            return {"error": f"Session {session_id} not found"}
+        
+        session_data = session_result.data[0]
+        
+        # Get trades
+        trades_result = supabase_client.client.table("trades").select("*").eq("session_id", session_id).execute()
+        trades = trades_result.data if trades_result.data else []
+        
+        return {
+            "session_id": session_id,
+            "session_found": True,
+            "session_status": session_data.get("status"),
+            "trade_count": len(trades),
+            "session_start": session_data.get("start_time"),
+            "session_end": session_data.get("end_time"),
+            "can_generate_report": True
+        }
+        
+    except Exception as e:
+        return {
+            "session_id": session_id,
+            "session_found": False,
+            "error": str(e),
+            "can_generate_report": False
+        }
 
 @app.get("/api/portfolio")
 async def get_portfolio_endpoint(user_id: str = "default"):
