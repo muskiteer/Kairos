@@ -17,7 +17,7 @@ services:
       - key: RECALL_API_KEY
         sync: false
       - key: RECALL_SANDBOX_API_BASE
-        value: https://api.sandbox.competitions.recall.network
+        value: https://api.competitions.recall.network
       - key: ENVIRONMENT
         value: production
       - key: DEBUG

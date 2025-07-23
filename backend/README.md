@@ -82,7 +82,7 @@ SUPABASE_ANON_KEY=your_supabase_anon_key
 
 # Trading API Configuration
 RECALL_API_KEY=your_recall_api_key_here
-RECALL_SANDBOX_API_BASE=https://api.sandbox.competitions.recall.network
+RECALL_SANDBOX_API_BASE=https://api.competitions.recall.network
 
 # Optional: News API
 COINPANIC_API_KEY=your_coinpanic_api_key

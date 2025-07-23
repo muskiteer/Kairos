@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # Load API key from .env
 load_dotenv()
 API_KEY = os.getenv("RECALL_API_KEY")
-RECALL_SANDBOX_API_BASE = "https://api.sandbox.competitions.recall.network"
+RECALL_SANDBOX_API_BASE = "https://api.competitions.recall.network"
 
 # Supported tokens and their addresses - EXPANDED LIST
 token_addresses = {

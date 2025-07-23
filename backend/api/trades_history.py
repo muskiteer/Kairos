@@ -7,7 +7,7 @@ from typing import Optional
 load_dotenv()  # Load environment variables from .env file
 
 # Constants
-RECALL_SANDBOX_API_BASE = os.getenv("RECALL_SANDBOX_API_BASE", "https://api.sandbox.competitions.recall.network")
+RECALL_SANDBOX_API_BASE = os.getenv("RECALL_SANDBOX_API_BASE", "https://api.competitions.recall.network")
 DEFAULT_API_KEY = os.getenv("RECALL_API_KEY")
 
 async def get_user_api_keys(user_id: str = "default") -> dict:

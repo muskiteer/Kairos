@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 API_KEY = os.getenv("RECALL_API_KEY")
-PRICE_ENDPOINT = "https://api.sandbox.competitions.recall.network/api/price"
+PRICE_ENDPOINT = "https://api.competitions.recall.network/api/price"
 
 # Your token_addresses and CHAIN_MAP dictionaries remain the same and are correct.
 token_addresses = {
