@@ -41,7 +41,7 @@ const Hero = () => {
           </div>
         </div>
       </div>
-      <LogoCloud className="mt-24 max-w-3xl mx-auto" />
+      <LogoCloud className="mt-16 md:mt-24 w-full max-w-full px-4 md:max-w-4xl mx-auto" />
     </div>
   );
 };
